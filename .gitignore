@@ -1,0 +1,14 @@
+# Secrets: Wi-Fi password, device keys. Never commit these.
+secrets.h
+.env
+
+# Build outputs
+build/
+*.bin
+*.elf
+
+# Editor / OS clutter
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
