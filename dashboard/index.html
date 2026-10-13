@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f1e1d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Home Sensing</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D85A30'/><rect x='13' y='6' width='6' height='14' rx='3' fill='white'/><circle cx='16' cy='22' r='5' fill='white'/></svg>">
+<style>
+  :root {
+    --bg: #faf9f5; --card: #ffffff; --tile: #f1efe8; --text: #2c2c2a; --muted: #6b6a64;
+    --border: rgba(44,44,42,0.12); --accent: #185FA5; --accent-bg: #e6f1fb;
+    --ok: #3B6D11; --warn: #854F0B; --warn-bg: #faeeda; --danger: #A32D2D;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1f1e1d; --card: #2a2927; --tile: #33322f; --text: #f1efe8; --muted: #b4b2a9;
+      --border: rgba(241,239,232,0.14); --accent: #85B7EB; --accent-bg: #0c447c;
+      --ok: #97C459; --warn: #FAC775; --warn-bg: #633806; --danger: #F09595;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  button, select, input { font: inherit; color: inherit; }
+  button, select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--muted); }
+  .muted { color: var(--muted); font-size: 14px; }
+  .status { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .status.stale .dot { background: var(--warn); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .card { background: var(--tile); border: 2px solid transparent; border-radius: 12px; padding: 12px 14px; text-align: left; }
+  .card.on { border-color: var(--accent); }
+  .card .label { font-size: 14px; color: var(--muted); }
+  .card .value { font-size: 28px; font-weight: 600; margin: 2px 0; }
+  .card .sub { font-size: 13px; color: var(--muted); }
+  .ranges { display: flex; gap: 6px; flex-wrap: wrap; margin: 20px 0 4px; }
+  .ranges button.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  #chart { width: 100%; height: 360px; }
+  #stats { font-size: 14px; color: var(--muted); margin: 4px 0 0; min-height: 21px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 420px; margin: 12vh auto 0; }
+  .panel h1 { margin-bottom: 8px; }
+  .panel input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); margin: 12px 0; }
+  .panel button { width: 100%; padding: 10px; background: var(--accent); color: var(--bg); border: none; }
+  .msg { font-size: 14px; margin: 12px 0 0; }
+  .msg.error { color: var(--danger); }
+  .banner { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+
+  <section id="login" class="panel" hidden>
+    <h1>Home Sensing</h1>
+    <p class="muted">Enter your email and we'll send you a sign-in link.</p>
+    <form id="login-form">
+      <input id="email" type="email" placeholder="name@example.com" autocomplete="email" required>
+      <button type="submit">Send sign-in link</button>
+    </form>
+    <p id="login-msg" class="msg"></p>
+  </section>
+
+  <section id="app" hidden>
+    <header>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h1 id="room-title">Home Sensing</h1>
+        <select id="device" aria-label="Room" hidden></select>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="status" class="status"><span class="dot"></span><span id="status-text">Loading…</span></span>
+        <button id="signout">Sign out</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <div class="cards">
+      <button class="card on" data-metric="temp_c"><div class="label">Temperature</div><div class="value" id="v-temp_c">--</div><div class="sub" id="s-temp_c">&nbsp;</div></button>
+      <button class="card" data-metric="humidity"><div class="label">Humidity</div><div class="value" id="v-humidity">--</div><div class="sub" id="s-humidity">&nbsp;</div></button>
+      <button class="card" data-metric="pressure_hpa"><div class="label">Pressure</div><div class="value" id="v-pressure_hpa">--</div><div class="sub" id="s-pressure_hpa">&nbsp;</div></button>
+    </div>
+
+    <div class="ranges">
+      <button data-range="24h" class="on">24 h</button>
+      <button data-range="7d">7 days</button>
+      <button data-range="30d">30 days</button>
+      <button data-range="1y">1 year</button>
+    </div>
+    <div id="chart"></div>
+    <p id="stats"></p>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script>
+// Public by design: access to the data is enforced by row-level security in Supabase.
+const SUPABASE_URL = "https://kaldnqbfgbglhvoummxg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_aTP3lF5WX0hwv7i_otntRA_c_Mtm29V";
+
+const METRICS = {
+  temp_c:       { label: "Temperature", unit: " °C",  dec: 1, color: "#D85A30" },
+  humidity:     { label: "Humidity",    unit: " %",   dec: 0, color: "#378ADD" },
+  pressure_hpa: { label: "Pressure",    unit: " hPa", dec: 0, color: "#7F77DD" },
+};
+// Bucket sizes keep every range around 700 points (the API returns at most 1000 rows)
+const RANGES = {
+  "24h": { ms: 864e5,       bucket: "2 minutes",  bucketMs: 120e3 },
+  "7d":  { ms: 7 * 864e5,   bucket: "15 minutes", bucketMs: 900e3 },
+  "30d": { ms: 30 * 864e5,  bucket: "1 hour",     bucketMs: 3600e3 },
+  "1y":  { ms: 365 * 864e5, bucket: "12 hours",   bucketMs: 43200e3 },
+};
+const OFFLINE_AFTER_MS = 3 * 60e3;
+const REFRESH_MS = 60e3;
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const state = { device: null, metric: "temp_c", range: "24h", rows: [], started: false };
+let chart = null;
+
+// ---------- Auth ----------
+
+db.auth.onAuthStateChange((_event, session) => {
+  if (session) {
+    $("login").hidden = true;
+    $("app").hidden = false;
+    if (!state.started) { state.started = true; startApp(); }
+  } else {
+    $("app").hidden = true;
+    $("login").hidden = false;
+  }
+});
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("login-msg");
+  msg.className = "msg";
+  msg.textContent = "Sending…";
+  const { error } = await db.auth.signInWithOtp({
+    email: $("email").value.trim(),
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  if (error) {
+    msg.className = "msg error";
+    msg.textContent = error.message;
+  } else {
+    msg.textContent = "Check your inbox and open the link on this device.";
+  }
+});
+
+$("signout").addEventListener("click", async () => {
+  await db.auth.signOut();
+  location.reload();
+});
+
+// ---------- Data ----------
+
+async function startApp() {
+  const { data: devices, error } = await db.from("devices").select("id, name").order("name");
+  if (error) return showBanner("Couldn't load devices: " + error.message);
+  if (!devices.length) {
+    const { data } = await db.auth.getUser();
+    return showBanner(`Signed in as ${data.user?.email}, but this account has no access. Add the email to the viewers table in Supabase.`);
+  }
+
+  const select = $("device");
+  select.innerHTML = devices.map((d) => `<option value="${d.id}">${d.name}</option>`).join("");
+  select.hidden = devices.length < 2;
+  select.addEventListener("change", () => { state.device = select.value; refresh(); });
+  state.device = devices[0].id;
+  state.names = Object.fromEntries(devices.map((d) => [d.id, d.name]));
+
+  initChart();
+  await refresh();
+  setInterval(refresh, REFRESH_MS);
+}
+
+async function bucketed(rangeKey) {
+  const r = RANGES[rangeKey];
+  const to = new Date();
+  const { data, error } = await db.rpc("readings_bucketed", {
+    p_device_id: state.device,
+    p_from: new Date(to - r.ms).toISOString(),
+    p_to: to.toISOString(),
+    p_bucket: r.bucket,
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function refresh() {
+  try {
+    const [latestRes, day, rows] = await Promise.all([
+      db.from("readings").select("ts, temp_c, humidity, pressure_hpa")
+        .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
+      bucketed("24h"),
+      state.range === "24h" ? null : bucketed(state.range),
+    ]);
+    if (latestRes.error) throw latestRes.error;
+    $("banner").hidden = true;
+    $("room-title").textContent = state.names[state.device];
+    renderCards(latestRes.data[0], day);
+    state.rows = rows || day;
+    renderChart();
+  } catch (err) {
+    showBanner("Couldn't load readings: " + (err.message || err));
+  }
+}
+
+// ---------- Rendering ----------
+
+function fmt(v, metric, extraDec = 0) {
+  if (v === null || v === undefined) return "--";
+  const m = METRICS[metric];
+  return Number(v).toFixed(m.dec + extraDec) + m.unit;
+}
+
+function ago(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 90) return `${s} s ago`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+}
+
+function renderCards(latest, day) {
+  for (const key of Object.keys(METRICS)) {
+    $("v-" + key).textContent = latest ? fmt(latest[key], key) : "--";
+    const values = day.map((r) => r[key]).filter((v) => v !== null);
+    $("s-" + key).textContent = values.length
+      ? `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`
+      : key === "humidity" ? "No humidity sensor yet" : "No data in the last 24 h";
+  }
+  const status = $("status");
+  if (!latest) {
+    status.className = "status stale";
+    $("status-text").textContent = "No readings yet";
+    return;
+  }
+  const age = Date.now() - new Date(latest.ts);
+  const stale = age > OFFLINE_AFTER_MS;
+  status.className = stale ? "status stale" : "status";
+  $("status-text").textContent = (stale ? "Offline · last seen " : "Online · updated ") + ago(age);
+}
+
+function initChart() {
+  chart = echarts.init($("chart"));
+  window.addEventListener("resize", () => chart.resize());
+  chart.on("datazoom", renderStats);
+
+  document.querySelectorAll(".card").forEach((card) => card.addEventListener("click", () => {
+    state.metric = card.dataset.metric;
+    document.querySelectorAll(".card").forEach((c) => c.classList.toggle("on", c === card));
+    renderChart();
+  }));
+  document.querySelectorAll(".ranges button").forEach((btn) => btn.addEventListener("click", () => {
+    state.range = btn.dataset.range;
+    document.querySelectorAll(".ranges button").forEach((b) => b.classList.toggle("on", b === btn));
+    chart.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+    refresh();
+  }));
+}
+
+// Points for the chart, with a null inserted wherever the sensor was silent, so gaps show as gaps
+function seriesData() {
+  const gapMs = RANGES[state.range].bucketMs * 3;
+  const out = [];
+  let prev = null;
+  for (const r of state.rows) {
+    const t = new Date(r.ts).getTime();
+    if (prev !== null && t - prev > gapMs) out.push([prev + 1, null]);
+    out.push([t, r[state.metric]]);
+    prev = t;
+  }
+  return out;
+}
+
+function renderChart() {
+  const m = METRICS[state.metric];
+  const muted = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+  const grid = "rgba(136,135,128,0.22)";
+  chart.setOption({
+    animation: false,
+    grid: { left: 52, right: 16, top: 16, bottom: 72 },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "rgba(44,44,42,0.92)", borderWidth: 0, textStyle: { color: "#fff", fontSize: 13 },
+      valueFormatter: (v) => fmt(v, state.metric, 1),
+    },
+    xAxis: { type: "time", axisLabel: { color: muted }, axisLine: { lineStyle: { color: grid } } },
+    yAxis: { type: "value", scale: true, axisLabel: { color: muted, formatter: (v) => v.toFixed(m.dec) },
+             splitLine: { lineStyle: { color: grid } } },
+    dataZoom: [
+      { type: "inside" },
+      { type: "slider", height: 24, bottom: 16, borderColor: grid, textStyle: { color: muted },
+        fillerColor: "rgba(55,138,221,0.15)", dataBackground: { lineStyle: { color: muted }, areaStyle: { color: grid } } },
+    ],
+    series: [{
+      name: m.label, type: "line", showSymbol: false, connectNulls: false, data: seriesData(),
+      lineStyle: { width: 2, color: m.color }, itemStyle: { color: m.color }, areaStyle: { color: m.color, opacity: 0.08 },
+    }],
+  });
+  renderStats();
+}
+
+// Min / average / max of whatever part of the timeline is currently visible
+function renderStats() {
+  const points = seriesData().filter((p) => p[1] !== null);
+  if (!points.length) { $("stats").textContent = "No data for this range yet."; return; }
+  const zoom = chart.getOption().dataZoom[0];
+  const first = points[0][0], last = points[points.length - 1][0];
+  const from = first + (last - first) * zoom.start / 100;
+  const to = first + (last - first) * zoom.end / 100;
+  const v = points.filter((p) => p[0] >= from && p[0] <= to).map((p) => p[1]);
+  if (!v.length) { $("stats").textContent = ""; return; }
+  const avg = v.reduce((a, b) => a + b, 0) / v.length;
+  const f = (x) => fmt(x, state.metric, 1);
+  $("stats").textContent = `Visible range · min ${f(Math.min(...v))} · avg ${f(avg)} · max ${f(Math.max(...v))}`;
+}
+
+function showBanner(text) {
+  $("banner").textContent = text;
+  $("banner").hidden = false;
+}
+</script>
+</body>
+</html>

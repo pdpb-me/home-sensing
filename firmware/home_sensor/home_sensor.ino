@@ -320,7 +320,7 @@ void setup() {
 
   SPI.begin(PIN_EPD_SCK, -1, PIN_EPD_MOSI, PIN_EPD_CS);  // display is write-only, no MISO
   display.epd2.selectSPI(SPI, SPISettings(4000000, MSBFIRST, SPI_MODE0));
-  display.init(115200, true, 2, false);
+  display.init(0, true, 2, false);  // 0 = no display-library debug output on Serial
   display.setRotation(3);  // 0 = normal, each step turns the image 90° clockwise
 
   connectWiFi();
