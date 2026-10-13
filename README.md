@@ -26,3 +26,13 @@ Sensor node (XIAO ESP32-S3) --Wi-Fi--> Supabase (database + login) <-- Dashboard
 | I2C SDA / SCL | D4 (GPIO5) / D5 (GPIO6) |
 | E-paper SCK / MOSI | D8 (GPIO7) / D10 (GPIO9) |
 | E-paper CS / DC / RST / BUSY | D1 (GPIO2) / D2 (GPIO3) / D3 (GPIO4) / D0 (GPIO1) |
+
+## Setup
+
+1. Run `supabase/schema.sql` in the Supabase SQL Editor.
+2. Register each node: insert into `devices` its id, name and the SHA-256 hash of a random key.
+3. Copy `firmware/home_sensor/secrets.example.h` to `secrets.h` and fill it in (Wi-Fi, Supabase URL + publishable key, device id + key).
+
+## Known limitations
+
+- Uploads use HTTPS but don't verify the server certificate yet (`setInsecure()`). Worst case on a compromised network, someone could capture a device key, which only allows adding readings for that device.

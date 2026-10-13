@@ -1,9 +1,10 @@
 // Home sensor: XIAO ESP32-S3 Plus + BMP280 (+ optional SHT4x) + WeAct 1.54" e-paper (SSD1681)
+// Reads every minute, uploads to Supabase over Wi-Fi, refreshes the e-paper every 5 minutes.
 //
-// Libraries (Arduino Library Manager):
-//   - GxEPD2 by Jean-Marc Zingg       (pulls in Adafruit GFX)
-//   - Adafruit BMP280 Library
-//   - Adafruit SHT4x Library
+// Setup:
+//   - Copy secrets.example.h to secrets.h (same folder) and fill it in. secrets.h is git-ignored.
+//   - Libraries (Arduino Library Manager):
+//       GxEPD2 by Jean-Marc Zingg (pulls in Adafruit GFX), Adafruit BMP280 Library, Adafruit SHT4x Library
 //
 // Wiring:
 //   I2C sensors: SDA -> D4 (GPIO5), SCL -> D5 (GPIO6), VCC -> 3V3, GND -> GND
@@ -14,6 +15,10 @@
 
 #include <Wire.h>
 #include <SPI.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <time.h>
 #include <GxEPD2_BW.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
@@ -21,15 +26,17 @@
 #include <Fonts/FreeSansBold24pt7b.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_SHT4x.h>
+#include "secrets.h"
 
 // ---------- Settings ----------
-// 0 = stay awake between updates (easy to re-upload while developing)
-// 1 = deep sleep between updates (battery mode; to re-upload, hold BOOT and tap RESET)
-#define USE_DEEP_SLEEP 0
+const uint32_t READ_SECONDS = 60;       // read + upload interval
+const uint8_t DISPLAY_EVERY = 5;        // redraw the e-paper every N readings
+const uint8_t FULL_REFRESH_EVERY = 12;  // full refresh every N redraws to clear ghosting
+const float ALTITUDE_M = 132;           // your altitude, to show sea-level pressure like weather apps
+const char* TIMEZONE = "CET-1CEST,M3.5.0,M10.5.0/3";  // Central Europe, with daylight saving
 
-const uint32_t UPDATE_SECONDS = 10;    // how often to read + redraw
-const uint8_t FULL_REFRESH_EVERY = 12;  // full refresh every N updates to clear ghosting
-const float ALTITUDE_M = 132;             // your altitude, to show sea-level pressure like weather apps
+const size_t QUEUE_CAPACITY = 1440;     // keeps 24 h of readings while offline
+const size_t UPLOAD_BATCH = 60;         // readings per upload request
 
 // ---------- Pins ----------
 const int PIN_SDA = 5;
@@ -46,14 +53,26 @@ GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(
 Adafruit_BMP280 bmp(&Wire);
 Adafruit_SHT4x sht4;
 
-// Survives deep sleep, so we know when a full refresh is due
-RTC_DATA_ATTR uint32_t updateCount = 0;
-
 struct Reading {
   float tempC = NAN;
   float humidity = NAN;
   float pressureHpa = NAN;
 };
+
+// Readings waiting to be uploaded (ring buffer, oldest first)
+struct Sample {
+  uint32_t ts;  // Unix seconds, UTC
+  float t, h, p;
+};
+Sample pending[QUEUE_CAPACITY];
+size_t qHead = 0, qCount = 0;
+
+time_t lastUploadAt = 0;
+uint32_t readingCount = 0;
+uint32_t displayCount = 0;
+uint32_t lastReadMs = 0;
+
+// ---------- Sensors ----------
 
 Reading readSensors() {
   Reading r;
@@ -86,6 +105,101 @@ Reading readSensors() {
 
   return r;
 }
+
+// ---------- Wi-Fi, clock, upload ----------
+
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  for (int i = 0; i < 30 && WiFi.status() != WL_CONNECTED; i++) {
+    delay(500);
+    Serial.print('.');
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf(" connected, IP %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println(" not yet, will keep trying");
+  }
+}
+
+bool clockIsSet() {
+  return time(nullptr) > 1700000000;  // any date after Nov 2023 means NTP has synced
+}
+
+void enqueue(const Sample& s) {
+  if (qCount == QUEUE_CAPACITY) {  // full: drop the oldest reading
+    qHead = (qHead + 1) % QUEUE_CAPACITY;
+    qCount--;
+  }
+  pending[(qHead + qCount) % QUEUE_CAPACITY] = s;
+  qCount++;
+}
+
+void appendNumber(String& s, float v, unsigned decimals) {
+  if (isnan(v)) s += "null";
+  else s += String(v, decimals);
+}
+
+// Sends the oldest readings in one request; removes them from the queue on success
+bool uploadBatch() {
+  size_t n = qCount < UPLOAD_BATCH ? qCount : UPLOAD_BATCH;
+
+  String body;
+  body.reserve(120 + n * 60);
+  body += "{\"p_device_id\":\"" DEVICE_ID "\",\"p_key\":\"" DEVICE_KEY "\",\"p_readings\":[";
+  for (size_t i = 0; i < n; i++) {
+    const Sample& s = pending[(qHead + i) % QUEUE_CAPACITY];
+    if (i > 0) body += ',';
+    body += "{\"ts\":";
+    body += s.ts;
+    body += ",\"t\":";
+    appendNumber(body, s.t, 2);
+    body += ",\"h\":";
+    appendNumber(body, s.h, 1);
+    body += ",\"p\":";
+    appendNumber(body, s.p, 1);
+    body += '}';
+  }
+  body += "]}";
+
+  WiFiClientSecure client;
+  client.setInsecure();  // traffic is encrypted, but the server certificate isn't verified
+  HTTPClient http;
+  http.begin(client, SUPABASE_URL "/rest/v1/rpc/ingest");
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.setTimeout(10000);
+  int code = http.POST(body);
+  String response = http.getString();
+  http.end();
+
+  if (code != 200) {
+    Serial.printf("Upload failed: HTTP %d %s\n", code, response.c_str());
+    return false;
+  }
+  qHead = (qHead + n) % QUEUE_CAPACITY;
+  qCount -= n;
+  lastUploadAt = time(nullptr);
+  Serial.printf("Uploaded %u reading(s), %s new, %u still queued\n",
+                (unsigned)n, response.c_str(), (unsigned)qCount);
+  return true;
+}
+
+void uploadQueue() {
+  if (qCount == 0) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("No Wi-Fi, %u reading(s) queued\n", (unsigned)qCount);
+    WiFi.reconnect();
+    return;
+  }
+  for (int i = 0; i < 5 && qCount > 0; i++) {  // after an outage, catch up a few batches per minute
+    if (!uploadBatch()) return;
+  }
+}
+
+// ---------- Display ----------
 
 void drawCentered(const char* text, int16_t cx, int16_t baseline, const GFXfont* font) {
   int16_t x1, y1;
@@ -127,63 +241,104 @@ void drawTemperature(float t, int16_t baseline) {
   display.print("C");
 }
 
+// Bottom line: when data last reached the cloud, or why it hasn't
+void statusText(char* out, size_t len) {
+  if (WiFi.status() != WL_CONNECTED) {
+    snprintf(out, len, "Offline, %u queued", (unsigned)qCount);
+  } else if (lastUploadAt == 0) {
+    snprintf(out, len, "Wi-Fi ok, not sent yet");
+  } else {
+    struct tm t;
+    localtime_r(&lastUploadAt, &t);
+    if (qCount > 0) snprintf(out, len, "Sent %02d:%02d, %u queued", t.tm_hour, t.tm_min, (unsigned)qCount);
+    else snprintf(out, len, "Sent %02d:%02d", t.tm_hour, t.tm_min);
+  }
+}
+
 void drawScreen(const Reading& r) {
-  char buf[12];
+  char buf[32];
   const int16_t w = display.width();
 
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(GxEPD_BLACK);
 
-  drawTemperature(r.tempC, 70);
-  display.drawFastHLine(10, 100, w - 20, GxEPD_BLACK);
+  drawTemperature(r.tempC, 64);
+  display.drawFastHLine(10, 92, w - 20, GxEPD_BLACK);
 
-  drawCentered("Humidity", w / 4, 128, &FreeSans9pt7b);
+  drawCentered("Humidity", w / 4, 118, &FreeSans9pt7b);
   if (isnan(r.humidity)) strcpy(buf, "--%");
   else snprintf(buf, sizeof(buf), "%.0f%%", r.humidity);
-  drawCentered(buf, w / 4, 168, &FreeSansBold18pt7b);
+  drawCentered(buf, w / 4, 156, &FreeSansBold18pt7b);
 
-  display.drawFastVLine(w / 2, 112, 70, GxEPD_BLACK);
+  display.drawFastVLine(w / 2, 102, 62, GxEPD_BLACK);
 
-  drawCentered("hPa", 3 * w / 4, 128, &FreeSans9pt7b);
+  drawCentered("hPa", 3 * w / 4, 118, &FreeSans9pt7b);
   if (isnan(r.pressureHpa)) strcpy(buf, "----");
   else snprintf(buf, sizeof(buf), "%.0f", r.pressureHpa);
-  drawCentered(buf, 3 * w / 4, 168, &FreeSansBold18pt7b);
+  drawCentered(buf, 3 * w / 4, 156, &FreeSansBold18pt7b);
+
+  display.drawFastHLine(10, 172, w - 20, GxEPD_BLACK);
+  statusText(buf, sizeof(buf));
+  drawCentered(buf, w / 2, 192, &FreeSans9pt7b);
 }
 
-void update() {
-  Reading r = readSensors();
-  Serial.printf("T=%.2f C  RH=%.1f %%  P=%.1f hPa\n", r.tempC, r.humidity, r.pressureHpa);
-
-  if (updateCount % FULL_REFRESH_EVERY == 0) display.setFullWindow();
+void updateDisplay(const Reading& r) {
+  if (displayCount % FULL_REFRESH_EVERY == 0) display.setFullWindow();
   else display.setPartialWindow(0, 0, display.width(), display.height());
 
   display.firstPage();
   do {
     drawScreen(r);
   } while (display.nextPage());
+  display.powerOff();
 
-  updateCount++;
+  displayCount++;
+}
+
+// ---------- Main ----------
+
+void takeReading() {
+  Reading r = readSensors();
+  Serial.printf("T=%.2f C  RH=%.1f %%  P=%.1f hPa\n", r.tempC, r.humidity, r.pressureHpa);
+
+  bool hasData = !isnan(r.tempC) || !isnan(r.pressureHpa);
+  if (hasData && clockIsSet()) {
+    enqueue({(uint32_t)time(nullptr), r.tempC, r.humidity, r.pressureHpa});
+  } else if (hasData) {
+    Serial.println("Clock not synced yet: reading shown but not stored");
+  }
+  uploadQueue();
+
+  if (readingCount % DISPLAY_EVERY == 0) updateDisplay(r);
+  readingCount++;
 }
 
 void setup() {
+  setCpuFrequencyMhz(80);  // plenty for this job, and less self-heating near the sensor
   Serial.begin(115200);
   Wire.begin(PIN_SDA, PIN_SCL);
 
   SPI.begin(PIN_EPD_SCK, -1, PIN_EPD_MOSI, PIN_EPD_CS);  // display is write-only, no MISO
   display.epd2.selectSPI(SPI, SPISettings(4000000, MSBFIRST, SPI_MODE0));
-  display.init(115200, updateCount == 0, 2, false);  // full clear only on first power-up
+  display.init(115200, true, 2, false);
   display.setRotation(3);  // 0 = normal, each step turns the image 90° clockwise
 
-#if USE_DEEP_SLEEP
-  update();
-  display.hibernate();
-  esp_sleep_enable_timer_wakeup((uint64_t)UPDATE_SECONDS * 1000000ULL);
-  esp_deep_sleep_start();
-#endif
+  connectWiFi();
+  configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");
+  struct tm now;
+  if (getLocalTime(&now, 10000)) {
+    Serial.printf("Clock synced: %04d-%02d-%02d %02d:%02d\n",
+                  now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min);
+  }
+
+  lastReadMs = millis();
+  takeReading();
 }
 
 void loop() {
-  update();
-  display.powerOff();
-  delay(UPDATE_SECONDS * 1000UL);
+  if (millis() - lastReadMs >= READ_SECONDS * 1000UL) {
+    lastReadMs = millis();
+    takeReading();
+  }
+  delay(100);
 }
