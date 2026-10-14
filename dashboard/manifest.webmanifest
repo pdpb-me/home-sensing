@@ -2,7 +2,7 @@
   "name": "Home Sensing",
   "short_name": "Home Sensing",
   "description": "Temperature, humidity and pressure around the house",
-  "id": "./",
+  "id": "/home-sensing/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
