@@ -37,12 +37,13 @@
 #define DEVICE_ALTITUDE_M 132       // metres above sea level, for CO2 pressure compensation
 #endif
 #ifndef DEVICE_TEMP_OFFSET_C
-#define DEVICE_TEMP_OFFSET_C 0.5f   // self-heating, small in single-shot mode; provisional, tune against a reference thermometer
+#define DEVICE_TEMP_OFFSET_C 0.0f   // self-heating, negligible in single-shot mode; the sensor can't take a negative value
 #endif
 
 // ---------- Settings ----------
 const uint32_t READ_SECONDS = 300;      // read + redraw interval; the SCD41's self-calibration assumes 5 minutes
 const uint8_t UPLOAD_EVERY = 6;         // upload every N readings
+const uint8_t UPLOAD_RETRIES = 3;       // after a failed upload, try again at this many following readings
 const uint8_t FULL_REFRESH_EVERY = 12;  // full refresh every N redraws to clear ghosting
 const float CO2_FAIR_PPM = 800;         // below this the air is good
 const float CO2_POOR_PPM = 1200;        // from here on, time to open the window
@@ -93,6 +94,7 @@ RTC_DATA_ATTR Sample pending[QUEUE_CAPACITY];
 RTC_DATA_ATTR size_t qHead = 0, qCount = 0;
 RTC_DATA_ATTR bool uploadOk = false;  // whether the last upload attempt worked
 RTC_DATA_ATTR uint32_t readingsSinceUpload = 0;
+RTC_DATA_ATTR uint8_t uploadRetriesLeft = 0;
 RTC_DATA_ATTR uint32_t displayCount = 0;
 RTC_DATA_ATTR AirLevel shownAir = AIR_UNKNOWN;
 RTC_DATA_ATTR bool scdReady = false;
@@ -440,11 +442,13 @@ void runCycle() {
   Serial.printf("T=%.2f C  RH=%.1f %%  CO2=%.0f ppm  Battery=%.2f V (%.0f %%)%s\n", r.tempC, r.humidity, r.co2Ppm,
                 r.batteryV, batteryPercent(r.batteryV), r.charging ? " charging" : "");
 
-  // A failed upload waits for the next regular one, so being offline doesn't drain the battery
+  // A failed upload is retried a few times, then waits for the next regular one,
+  // so a hiccup costs minutes and a long outage doesn't drain the battery
   AirLevel air = airLevel(r.co2Ppm);
   readingsSinceUpload++;
   bool firstCycle = displayCount == 0;
-  bool uploadDue = firstCycle || readingsSinceUpload >= UPLOAD_EVERY || (air == AIR_POOR && shownAir != AIR_POOR);
+  bool retrying = uploadRetriesLeft > 0;
+  bool uploadDue = firstCycle || retrying || readingsSinceUpload >= UPLOAD_EVERY || (air == AIR_POOR && shownAir != AIR_POOR);
 
   bool useWiFi = uploadDue || !clockIsSet();
   if (useWiFi) {
@@ -462,6 +466,8 @@ void runCycle() {
   if (uploadDue) {
     uploadQueue();
     readingsSinceUpload = 0;
+    if (uploadOk) uploadRetriesLeft = 0;
+    else uploadRetriesLeft = retrying ? uploadRetriesLeft - 1 : UPLOAD_RETRIES;
   }
   if (useWiFi) disconnectWiFi();
 
