@@ -10,14 +10,14 @@
 <title>Home Sensing</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D85A30'/><rect x='13' y='6' width='6' height='14' rx='3' fill='white'/><circle cx='16' cy='22' r='5' fill='white'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect x='4' y='4' width='88' height='88' rx='17' fill='%23fbf9f2' stroke='%2316140f' stroke-width='7'/><rect x='21' y='48' width='14' height='27' fill='%23a9d18e' stroke='%2316140f' stroke-width='3'/><rect x='41' y='33' width='14' height='42' fill='%23f2c14e' stroke='%2316140f' stroke-width='3'/><rect x='61' y='20' width='14' height='55' fill='%2316140f'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
+  /* Sage, mustard and black mean status, and nothing else. Selection uses shape: a shadow, an arrow, an open chart. */
   :root {
     --paper: #f2eee3; --card: #fbf9f2; --ink: #16140f; --muted: #5f5a4d;
-    --accent: #f2c14e; --good: #a9d18e; --on-color: #16140f; --panel: #2a2925;
-    --grid: rgba(22,20,15,0.16);
+    --good: #a9d18e; --fair: #f2c14e; --poor: #16140f; --panel: #2a2925;
     --body: "Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
     --mono: "JetBrains Mono", Consolas, monospace;
   }
@@ -31,10 +31,8 @@
   h1::before, h2::before { content: ""; width: 10px; height: 10px; background: var(--ink); flex: none; }
   button, select, input { font: inherit; color: inherit; }
   button, select { background: var(--card); border: 2px solid var(--ink); border-radius: 22px; min-height: 44px; padding: 0 14px; font-weight: 700; cursor: pointer; }
-  button:hover, select:hover { background: var(--paper); }
-  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   .muted { color: var(--muted); font-size: 14px; }
-  .mono { font: 500 13px var(--mono); }
   .top-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .status { font: 500 13px var(--mono); display: inline-flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; background: var(--ink); }
@@ -42,56 +40,68 @@
 
   .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .side, .detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .detail { gap: 20px; }
+  .detail { display: none; }
   @media (min-width: 900px) {
-    .layout { grid-template-columns: 370px minmax(0, 1fr); gap: 28px; align-items: start; }
+    .layout { grid-template-columns: 390px minmax(0, 1fr); gap: 28px; align-items: start; }
+    .detail { display: flex; }
   }
 
-  .twin { position: relative; background: var(--panel); border: 2px solid #16140f; border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 20px; display: flex; justify-content: center; }
+  .twin { position: relative; background: var(--panel); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 20px; display: flex; justify-content: center; }
   .twin::after { content: ""; position: absolute; top: 0; right: 0; width: 72px; height: 12px; border-top-right-radius: 10px; background: repeating-conic-gradient(#16140f 0 25%, #f2c14e 0 50%) 0 0 / 8px 8px; }
-  .screen { width: 220px; height: 220px; background: #e6e5dc; color: #16140f; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
-  .screen-top { display: flex; justify-content: center; align-items: center; gap: 90px; height: 25px; flex: none; border-bottom: 2px solid #16140f; }
-  .screen-temp { font-size: 48px; font-weight: 700; line-height: 1; text-align: center; padding: 10px 0 8px; margin: 0 10px; border-bottom: 2px solid #16140f; }
+  .screen { width: 220px; height: 220px; background: #e6e5dc; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
+  .screen-top { display: flex; justify-content: center; align-items: center; gap: 90px; height: 25px; flex: none; border-bottom: 2px solid var(--ink); }
+  .screen-temp { font-size: 48px; font-weight: 700; line-height: 1; text-align: center; padding: 10px 0 8px; margin: 0 10px; border-bottom: 2px solid var(--ink); }
   .screen-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-grow: 1; align-items: center; text-align: center; }
-  .screen-row > div + div { border-left: 2px solid #16140f; }
+  .screen-row > div + div { border-left: 2px solid var(--ink); }
   .screen-row b { display: block; font-size: 30px; line-height: 1.1; }
   .screen-air { font-size: 20px; font-weight: 700; text-align: center; padding: 6px 0 11px; flex: none; }
-  .screen-air.poor { background: #16140f; color: #e6e5dc; }
+  .screen-air.poor { background: var(--ink); color: #e6e5dc; }
 
-  .rows { display: flex; flex-direction: column; gap: 8px; }
-  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-height: 58px; padding: 7px 14px; text-align: left; border-radius: 10px; box-shadow: 2px 2px 0 var(--ink); font-weight: 500; }
-  .row.on, .row.on:hover { background: var(--accent); color: var(--on-color); box-shadow: 2px 2px 0 var(--ink); }
-  .row .label { display: block; font-size: 17px; font-weight: 700; line-height: 1.2; }
-  .row .sub { display: block; font: 400 13px var(--mono); }
+  .rows { display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 62px; padding: 8px 12px; text-align: left; border-radius: 10px; box-shadow: 2px 2px 0 var(--ink); font-weight: 500; }
+  .row.on { box-shadow: 5px 5px 0 var(--ink); }
+  .row .text { min-width: 0; }
+  .row .head { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; }
+  .row .label { font-size: 17px; font-weight: 700; }
+  .row .sub { display: block; font: 400 13px var(--mono); margin-top: 3px; }
+  .row .end { display: flex; align-items: center; gap: 8px; flex: none; }
   .row .value { font: 500 28px/1 var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
-
-  .box { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 18px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-  .box-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .ranges { display: flex; gap: 6px; flex-wrap: wrap; }
-  .ranges button { padding: 0 12px; font-size: 15px; }
-  .ranges button.on, .ranges button.on:hover { background: var(--accent); color: var(--on-color); }
-  #chart { width: 100%; height: 340px; }
-  #stats { font: 500 13px var(--mono); margin: 0; min-height: 18px; }
-
-  .hours { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; }
-  @media (min-width: 560px) { .hours { grid-template-columns: repeat(24, minmax(0, 1fr)); } }
-  .hour { aspect-ratio: 1; border: 2px solid var(--ink); border-radius: 3px; }
-  .hour.empty { border-color: var(--grid); }
+  .row .mark { font: 700 16px var(--mono); width: 12px; }
+  .chip { font-size: 13px; font-weight: 700; padding: 1px 8px; border: 2px solid var(--ink); border-radius: 5px; }
   .good { background: var(--good); }
-  .fair { background: var(--accent); }
-  .poor { background: var(--ink); }
-  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 14px; font-weight: 700; }
+  .fair { background: var(--fair); }
+  .poor { background: var(--poor); color: var(--card); }
+
+  .box { background: var(--card); border: 2px solid var(--ink); border-radius: 10px; padding: 14px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .ranges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ranges button { min-height: 40px; padding: 0 12px; font-size: 14px; }
+  .ranges button.on { background: var(--ink); color: var(--card); }
+  .readout { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font: 500 14px var(--mono); min-height: 20px; }
+  .readout b { font-weight: 700; }
+  .plot-wrap { display: flex; gap: 6px; min-width: 0; --plot: 180px; }
+  @media (min-width: 900px) { .plot-wrap { --plot: 360px; } }
+  .y-axis { display: flex; flex-direction: column; justify-content: space-between; height: var(--plot); width: 40px; flex: none; text-align: right; font: 400 12px/1 var(--mono); color: var(--muted); }
+  .plot { position: relative; flex: 1 1 0; min-width: 0; height: var(--plot); border-bottom: 2px solid var(--ink); display: flex; align-items: flex-end; gap: 2px; }
+  .bar { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; display: flex; align-items: flex-end; }
+  .bar span { display: block; width: 100%; }
+  .bar.picked span { outline: 2px solid var(--ink); }
+  .limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--ink); pointer-events: none; }
+  .limit span { position: absolute; right: 0; top: -15px; font: 500 11px var(--mono); background: var(--card); padding: 0 2px; }
+  .x-axis { display: flex; justify-content: space-between; padding-left: 46px; font: 400 12px var(--mono); color: var(--muted); }
+  .chart-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 14px; font-weight: 700; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 12px; height: 12px; border: 2px solid var(--ink); }
+  #stats { font: 500 13px var(--mono); margin: 0; }
 
   .panel { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 24px; max-width: 420px; margin: 12vh auto 0; }
   .panel h1 { margin-bottom: 8px; }
   .panel p { margin: 8px 0 0; }
   .panel input { width: 100%; min-height: 46px; padding: 0 12px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); margin: 12px 0; }
-  .panel button { width: 100%; background: var(--accent); color: var(--on-color); }
+  .panel button { width: 100%; background: var(--ink); color: var(--card); }
   .msg { font-size: 14px; margin: 12px 0 0; }
   .msg.error { font-weight: 700; }
-  .banner { background: var(--accent); color: var(--on-color); border: 2px solid var(--ink); border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 700; margin-bottom: 16px; }
+  .banner { background: var(--card); border: 2px solid var(--ink); border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 700; margin-bottom: 16px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -147,38 +157,31 @@
           </div>
         </div>
 
-        <div class="rows">
-          <button class="row on" data-metric="co2_ppm"><span><span class="label">CO2</span><span class="sub" id="s-co2_ppm">&nbsp;</span></span><span class="value" id="v-co2_ppm">--</span></button>
-          <button class="row" data-metric="temp_c"><span><span class="label">Temperature</span><span class="sub" id="s-temp_c">&nbsp;</span></span><span class="value" id="v-temp_c">--</span></button>
-          <button class="row" data-metric="humidity"><span><span class="label">Humidity</span><span class="sub" id="s-humidity">&nbsp;</span></span><span class="value" id="v-humidity">--</span></button>
-          <button class="row" data-metric="battery_pct"><span><span class="label">Battery</span><span class="sub" id="s-battery_pct">&nbsp;</span></span><span class="value" id="v-battery_pct">--</span></button>
-        </div>
+        <div class="rows" id="rows"></div>
       </div>
 
-      <div class="detail">
-        <div class="box">
-          <h2>Your air today</h2>
-          <div class="hours" id="hours"></div>
-          <div class="legend">
-            <span><i class="good"></i>Good</span>
-            <span><i class="fair"></i>Fair</span>
-            <span><i class="poor"></i>Poor</span>
-          </div>
-        </div>
+      <div class="detail" id="detail">
+        <h2 id="chart-title">CO2</h2>
+      </div>
+    </div>
 
-        <div class="box">
-          <div class="box-head">
-            <h2 id="chart-title">CO2</h2>
-            <div class="ranges">
-              <button data-range="24h" class="on">24 h</button>
-              <button data-range="7d">7 days</button>
-              <button data-range="30d">30 days</button>
-              <button data-range="1y">1 year</button>
-            </div>
-          </div>
-          <div id="chart"></div>
-          <p id="stats"></p>
-        </div>
+    <!-- Moved under the selected row on a phone, and into the right column on a wide screen -->
+    <div class="box" id="chart-box">
+      <div class="ranges">
+        <button data-range="24h" class="on">24 h</button>
+        <button data-range="7d">7 days</button>
+        <button data-range="30d">30 days</button>
+        <button data-range="1y">1 year</button>
+      </div>
+      <div class="readout"><span id="readout-time"></span><b id="readout-value"></b></div>
+      <div class="plot-wrap">
+        <div class="y-axis"><span id="y-hi"></span><span id="y-mid"></span><span id="y-lo"></span></div>
+        <div class="plot" id="plot"></div>
+      </div>
+      <div class="x-axis"><span id="x-start"></span><span id="x-mid"></span><span>Now</span></div>
+      <div class="chart-foot">
+        <div class="legend" id="legend"></div>
+        <p id="stats"></p>
       </div>
     </div>
   </section>
@@ -186,37 +189,50 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
 <script>
 // Public by design: access to the data is enforced by row-level security in Supabase.
 const SUPABASE_URL = "https://kaldnqbfgbglhvoummxg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_aTP3lF5WX0hwv7i_otntRA_c_Mtm29V";
 
+// Each reading: its chart scale, limit lines, and how a value is rated.
+// CO2 and humidity use the same limits as the firmware.
 const METRICS = {
-  temp_c:       { label: "Temperature", unit: "°",    dec: 1, statDec: 1 },
-  humidity:     { label: "Humidity",    unit: "%",    dec: 0, statDec: 0 },
-  co2_ppm:      { label: "CO2",         unit: "",     dec: 0, statDec: 0 },
-  battery_pct:  { label: "Battery",     unit: "%",    dec: 0, statDec: 0 },
+  co2_ppm: {
+    label: "CO2", unit: "", dec: 0, lo: 300, hi: 1600, limits: [[800, "Fair"], [1200, "Poor"]],
+    rate: (v) => v < 800 ? ["good", "Good"] : v < 1200 ? ["fair", "Fair"] : ["poor", "Poor"],
+    legend: [["good", "Good"], ["fair", "Fair"], ["poor", "Poor"]],
+  },
+  temp_c: {
+    label: "Temperature", unit: "°", dec: 1, lo: 14, hi: 30, limits: [[18, "18°"], [26, "26°"]],
+    rate: (v) => v < 18 ? ["fair", "Cool"] : v > 26 ? ["fair", "Warm"] : ["good", "Comfortable"],
+    legend: [["good", "Comfortable"], ["fair", "Cool or warm"]],
+  },
+  humidity: {
+    label: "Humidity", unit: "%", dec: 0, lo: 20, hi: 80, limits: [[40, "40%"], [60, "60%"]],
+    rate: (v) => v < 40 ? ["fair", "Dry"] : v > 60 ? ["fair", "Humid"] : ["good", "OK"],
+    legend: [["good", "OK"], ["fair", "Dry or humid"]],
+  },
+  battery_pct: {
+    label: "Battery", unit: "%", dec: 0, lo: 0, hi: 100, limits: [[15, "15%"], [30, "30%"]],
+    rate: (v) => v < 15 ? ["poor", "Charge now"] : v < 30 ? ["fair", "Low"] : ["good", "OK"],
+    legend: [["good", "OK"], ["fair", "Low"], ["poor", "Charge now"]],
+  },
 };
-// Bucket sizes keep every range around 700 points (the API returns at most 1000 rows)
+// Bucket sizes give each range about 30-50 bars
 const RANGES = {
-  "24h": { ms: 864e5,       bucket: "2 minutes",  bucketMs: 120e3 },
-  "7d":  { ms: 7 * 864e5,   bucket: "15 minutes", bucketMs: 900e3 },
-  "30d": { ms: 30 * 864e5,  bucket: "1 hour",     bucketMs: 3600e3 },
-  "1y":  { ms: 365 * 864e5, bucket: "12 hours",   bucketMs: 43200e3 },
+  "24h": { ms: 864e5,       bucket: "30 minutes", bucketMs: 18e5,    start: "24 h ago",   mid: "12 h ago" },
+  "7d":  { ms: 7 * 864e5,   bucket: "4 hours",    bucketMs: 144e5,   start: "7 days ago", mid: "3.5 days ago" },
+  "30d": { ms: 30 * 864e5,  bucket: "1 day",      bucketMs: 864e5,   start: "30 days ago", mid: "15 days ago" },
+  "1y":  { ms: 365 * 864e5, bucket: "7 days",     bucketMs: 6048e5,  start: "1 year ago", mid: "6 months ago" },
 };
+const BUCKET_ORIGIN = Date.UTC(2000, 0, 1);  // readings_bucketed counts its buckets from here
 const OFFLINE_AFTER_MS = 45 * 60e3;  // the node uploads every 30 minutes
-// Same limits as the firmware
-const CO2_FAIR_PPM = 800;
-const CO2_POOR_PPM = 1200;
-const HUMIDITY_DRY = 40;
-const HUMIDITY_WET = 60;
 const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const state = { device: null, metric: "co2_ppm", range: "24h", rows: [], started: false };
-let chart = null;
+const state = { device: null, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
+const wide = window.matchMedia("(min-width: 900px)");
 
 // ---------- Auth ----------
 
@@ -266,53 +282,40 @@ async function startApp() {
   const select = $("device");
   select.innerHTML = devices.map((d) => `<option value="${d.id}">${d.name}</option>`).join("");
   select.hidden = devices.length < 2;
-  select.addEventListener("change", () => { state.device = select.value; refresh(); });
+  select.addEventListener("change", () => { state.device = select.value; state.picked = null; refresh(); });
   state.device = devices[0].id;
   state.names = Object.fromEntries(devices.map((d) => [d.id, d.name]));
 
-  initChart();
+  initControls();
   await refresh();
   setInterval(refresh, REFRESH_MS);
 }
 
-async function fetchBuckets(from, to, bucket) {
+async function bucketed(rangeKey) {
+  const r = RANGES[rangeKey];
+  const to = new Date();
   const { data, error } = await db.rpc("readings_bucketed", {
     p_device_id: state.device,
-    p_from: from.toISOString(),
+    p_from: new Date(to - r.ms).toISOString(),
     p_to: to.toISOString(),
-    p_bucket: bucket,
+    p_bucket: r.bucket,
   });
   if (error) throw error;
   return data;
 }
 
-function bucketed(rangeKey) {
-  const r = RANGES[rangeKey];
-  const to = new Date();
-  return fetchBuckets(new Date(to - r.ms), to, r.bucket);
-}
-
-// One row per hour since local midnight
-function hoursToday() {
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  return fetchBuckets(midnight, new Date(), "1 hour");
-}
-
 async function refresh() {
   try {
-    const [latestRes, day, rows, hours] = await Promise.all([
+    const [latestRes, day, rows] = await Promise.all([
       db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
         .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
       bucketed("24h"),
       state.range === "24h" ? null : bucketed(state.range),
-      hoursToday(),
     ]);
     if (latestRes.error) throw latestRes.error;
     $("banner").hidden = true;
     $("room-title").textContent = state.names[state.device];
-    renderCards(latestRes.data[0], day);
-    renderHours(hours);
+    renderRows(latestRes.data[0], day);
     state.rows = rows || day;
     renderChart();
   } catch (err) {
@@ -322,10 +325,12 @@ async function refresh() {
 
 // ---------- Rendering ----------
 
-function fmt(v, metric, dec) {
-  if (v === null || v === undefined) return "--";
+const has = (v) => v !== null && v !== undefined;
+
+function fmt(v, metric) {
+  if (!has(v)) return "--";
   const m = METRICS[metric];
-  return Number(v).toFixed(dec ?? m.dec) + m.unit;
+  return Number(v).toFixed(m.dec) + m.unit;
 }
 
 function ago(ms) {
@@ -337,35 +342,33 @@ function ago(ms) {
   return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
-function airLevel(co2) {
-  return co2 < CO2_FAIR_PPM ? "good" : co2 < CO2_POOR_PPM ? "fair" : "poor";
-}
-
-function humidityWord(h) {
-  return h < HUMIDITY_DRY ? "Dry" : h > HUMIDITY_WET ? "Humid" : "OK";
-}
-
-function renderCards(latest, day) {
-  for (const key of Object.keys(METRICS)) {
-    $("v-" + key).textContent = latest ? fmt(latest[key], key) : "--";
-    const values = day.map((r) => r[key]).filter((v) => v !== null);
-    $("s-" + key).textContent = values.length
-      ? `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`
-      : "No data in the last 24 h";
-  }
-  if (latest?.humidity != null) {
-    $("s-humidity").textContent = humidityWord(latest.humidity) + " · " + $("s-humidity").textContent;
-  }
-  if (latest?.co2_ppm != null) {
-    const level = airLevel(latest.co2_ppm);
-    $("s-co2_ppm").textContent = level === "poor"
-      ? "Poor · open the window"
-      : level[0].toUpperCase() + level.slice(1) + " · " + $("s-co2_ppm").textContent;
-  }
-  if (latest?.charging) $("v-battery_pct").textContent = "USB";
-  if (latest?.battery_v != null) {
-    $("s-battery_pct").textContent = (latest.charging ? "Charging · " : "") + Number(latest.battery_v).toFixed(2) + " V";
-  }
+function renderRows(latest, day) {
+  const html = Object.keys(METRICS).map((key) => {
+    const m = METRICS[key];
+    const value = latest?.[key];
+    let chip = has(value) ? m.rate(value) : null;
+    let sub = "No data in the last 24 h";
+    const values = day.map((r) => r[key]).filter(has);
+    if (values.length) sub = `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`;
+    if (key === "co2_ppm" && chip?.[0] === "poor") sub = "Open the window";
+    if (key === "battery_pct") {
+      if (latest?.charging) chip = ["good", "Charging"];
+      if (has(latest?.battery_v)) sub = Number(latest.battery_v).toFixed(2) + " V";
+    }
+    const on = key === state.metric;
+    const mark = wide.matches ? (on ? "▸" : "") : (on ? "▾" : "▸");
+    return `<button class="row${on ? " on" : ""}" data-metric="${key}" aria-expanded="${on}">
+      <span class="text">
+        <span class="head"><span class="label">${m.label}</span>${chip ? `<span class="chip ${chip[0]}">${chip[1]}</span>` : ""}</span>
+        <span class="sub">${sub}</span>
+      </span>
+      <span class="end"><span class="value">${has(value) ? fmt(value, key) : "--"}</span><span class="mark" aria-hidden="true">${mark}</span></span>
+    </button>`;
+  }).join("");
+  // The chart may be sitting inside the rows, so it is taken out before they are replaced
+  $("app").append($("chart-box"));
+  $("rows").innerHTML = html;
+  placeChart();
 
   const status = $("status");
   if (!latest) {
@@ -381,14 +384,19 @@ function renderCards(latest, day) {
   renderScreen(latest, stale);
 }
 
+function placeChart() {
+  const box = $("chart-box");
+  if (wide.matches) $("detail").append(box);
+  else $("rows").querySelector(`[data-metric="${state.metric}"]`).after(box);
+}
+
 function renderScreen(r, stale) {
-  const has = (v) => v !== null && v !== undefined;
   $("t-temp").textContent = has(r?.temp_c) ? Number(r.temp_c).toFixed(1) + "°C" : "--";
   $("t-hum").textContent = has(r?.humidity) ? Math.round(r.humidity) + "%" : "--";
-  $("t-hum-word").textContent = has(r?.humidity) ? humidityWord(r.humidity) : "--";
+  $("t-hum-word").textContent = has(r?.humidity) ? METRICS.humidity.rate(r.humidity)[1] : "--";
   $("t-co2").textContent = has(r?.co2_ppm) ? Math.round(r.co2_ppm) : "--";
 
-  const level = has(r?.co2_ppm) ? airLevel(r.co2_ppm) : null;
+  const level = has(r?.co2_ppm) ? METRICS.co2_ppm.rate(r.co2_ppm)[0] : null;
   const air = $("t-air");
   air.textContent = level === "poor" ? "Open window" : level ? "Air " + level : "Air --";
   air.classList.toggle("poor", level === "poor");
@@ -399,103 +407,93 @@ function renderScreen(r, stale) {
   $("screen").setAttribute("aria-label", `Latest reading: ${$("t-temp").textContent}, humidity ${$("t-hum").textContent}, CO2 ${$("t-co2").textContent}, ${air.textContent}`);
 }
 
-// A square per hour of today, by its average CO2; hours without data stay empty
-function renderHours(hours) {
-  const byHour = {};
-  for (const r of hours) {
-    if (r.co2_ppm !== null) byHour[new Date(r.ts).getHours()] = airLevel(r.co2_ppm);
-  }
-  $("hours").innerHTML = Array.from({ length: 24 }, (_, h) => {
-    const level = byHour[h];
-    const label = String(h).padStart(2, "0") + ":00" + (level ? " · " + level : " · no data");
-    return `<div class="hour ${level || "empty"}" title="${label}" aria-label="${label}"></div>`;
-  }).join("");
-}
-
-function initChart() {
-  chart = echarts.init($("chart"));
-  window.addEventListener("resize", () => chart.resize());
-  chart.on("datazoom", renderStats);
-
-  document.querySelectorAll(".row").forEach((row) => row.addEventListener("click", () => {
+function initControls() {
+  $("rows").addEventListener("click", (e) => {
+    const row = e.target.closest(".row");
+    if (!row) return;
     state.metric = row.dataset.metric;
-    document.querySelectorAll(".row").forEach((c) => c.classList.toggle("on", c === row));
-    renderChart();
-  }));
+    state.picked = null;
+    refresh();
+  });
   document.querySelectorAll(".ranges button").forEach((btn) => btn.addEventListener("click", () => {
     state.range = btn.dataset.range;
+    state.picked = null;
     document.querySelectorAll(".ranges button").forEach((b) => b.classList.toggle("on", b === btn));
-    chart.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
     refresh();
   }));
+  $("plot").addEventListener("click", (e) => {
+    const bar = e.target.closest(".bar");
+    if (!bar) return;
+    state.picked = Number(bar.dataset.i);
+    renderChart();
+  });
+  wide.addEventListener("change", refresh);
 }
 
-// Points for the chart, with a null inserted wherever the sensor was silent, so gaps show as gaps
-function seriesData() {
-  const gapMs = RANGES[state.range].bucketMs * 3;
-  const out = [];
-  let prev = null;
-  for (const r of state.rows) {
-    const t = new Date(r.ts).getTime();
-    if (prev !== null && t - prev > gapMs) out.push([prev + 1, null]);
-    out.push([t, r[state.metric]]);
-    prev = t;
+// One slot per bucket of the range, oldest first; hours with no data stay as empty slots
+function chartSlots() {
+  const r = RANGES[state.range];
+  const now = Date.now();
+  const first = BUCKET_ORIGIN + Math.floor((now - r.ms - BUCKET_ORIGIN) / r.bucketMs) * r.bucketMs;
+  const count = Math.floor((now - first) / r.bucketMs) + 1;
+  const slots = Array.from({ length: count }, (_, i) => ({ t: first + i * r.bucketMs, v: null }));
+  for (const row of state.rows) {
+    const i = Math.floor((new Date(row.ts).getTime() - first) / r.bucketMs);
+    if (slots[i]) slots[i].v = row[state.metric];
   }
-  return out;
+  return slots;
+}
+
+function whenLabel(t) {
+  const ms = Date.now() - t;
+  return ms < RANGES[state.range].bucketMs ? "Now" : ago(ms);
 }
 
 function renderChart() {
   const m = METRICS[state.metric];
+  const r = RANGES[state.range];
   $("chart-title").textContent = m.label;
-  const css = getComputedStyle(document.documentElement);
-  const token = (name) => css.getPropertyValue(name).trim();
-  const ink = token("--ink"), muted = token("--muted"), grid = token("--grid"), accent = token("--accent");
-  const mono = "JetBrains Mono, Consolas, monospace";
-  chart.setOption({
-    animation: false,
-    textStyle: { fontFamily: mono },
-    grid: { left: 48, right: 12, top: 12, bottom: 68 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#16140f", borderWidth: 0, borderRadius: 4, textStyle: { color: "#fbf9f2", fontSize: 13, fontFamily: mono },
-      valueFormatter: (v) => fmt(v, state.metric, m.statDec),
-    },
-    xAxis: { type: "time", axisLabel: { color: muted }, axisLine: { lineStyle: { color: ink, width: 2 } }, axisTick: { show: false } },
-    yAxis: { type: "value", scale: true, axisLabel: { color: muted, formatter: (v) => v.toFixed(m.dec) },
-             splitLine: { lineStyle: { color: grid } } },
-    dataZoom: [
-      { type: "inside" },
-      { type: "slider", height: 24, bottom: 12, borderColor: ink, borderRadius: 4, textStyle: { color: muted, fontFamily: mono },
-        fillerColor: "rgba(242,193,78,0.35)", handleStyle: { color: accent, borderColor: ink },
-        dataBackground: { lineStyle: { color: muted }, areaStyle: { color: grid } } },
-    ],
-    series: [{
-      name: m.label, type: "line", showSymbol: false, connectNulls: false, data: seriesData(),
-      lineStyle: { width: 2, color: ink }, itemStyle: { color: ink }, areaStyle: { color: accent, opacity: 0.85 },
-      markLine: {
-        silent: true, symbol: "none", lineStyle: { color: ink, type: "dashed" }, label: { color: ink, position: "insideEndTop" },
-        data: state.metric === "co2_ppm"
-          ? [{ yAxis: CO2_FAIR_PPM, label: { formatter: "Fair" } }, { yAxis: CO2_POOR_PPM, label: { formatter: "Poor" } }]
-          : [],
-      },
-    }],
-  });
-  renderStats();
-}
+  $("x-start").textContent = r.start;
+  $("x-mid").textContent = r.mid;
 
-// Min / average / max of whatever part of the timeline is currently visible
-function renderStats() {
-  const points = seriesData().filter((p) => p[1] !== null);
-  if (!points.length) { $("stats").textContent = "No data for this range yet."; return; }
-  const zoom = chart.getOption().dataZoom[0];
-  const first = points[0][0], last = points[points.length - 1][0];
-  const from = first + (last - first) * zoom.start / 100;
-  const to = first + (last - first) * zoom.end / 100;
-  const v = points.filter((p) => p[0] >= from && p[0] <= to).map((p) => p[1]);
-  if (!v.length) { $("stats").textContent = ""; return; }
+  const slots = chartSlots();
+  const known = slots.filter((s) => has(s.v));
+  const lo = Math.min(m.lo, ...known.map((s) => s.v));
+  const hi = Math.max(m.hi, ...known.map((s) => s.v));
+  const label = (v) => Number(v).toFixed(0) + m.unit;
+  $("y-hi").textContent = label(hi);
+  $("y-mid").textContent = label((hi + lo) / 2);
+  $("y-lo").textContent = label(lo);
+
+  if (state.picked === null || !has(slots[state.picked]?.v)) {
+    state.picked = known.length ? slots.lastIndexOf(known[known.length - 1]) : null;
+  }
+
+  const height = (v) => Math.max(1, (v - lo) / (hi - lo) * 100);
+  const bars = slots.map((s, i) => {
+    if (!has(s.v)) return `<div class="bar" aria-hidden="true"></div>`;
+    const [level, word] = m.rate(s.v);
+    const text = `${whenLabel(s.t)}: ${fmt(s.v, state.metric)}, ${word}`;
+    return `<button class="bar${i === state.picked ? " picked" : ""}" data-i="${i}" aria-label="${text}"><span class="${level}" style="height:${height(s.v).toFixed(1)}%"></span></button>`;
+  }).join("");
+  const limits = m.limits.map(([v, text]) =>
+    `<div class="limit" style="top:${(100 - (v - lo) / (hi - lo) * 100).toFixed(1)}%"><span>${text}</span></div>`).join("");
+  $("plot").innerHTML = bars + limits;
+
+  $("legend").innerHTML = m.legend.map(([level, text]) => `<span><i class="${level}"></i>${text}</span>`).join("");
+
+  if (!known.length) {
+    $("readout-time").textContent = "No data for this range yet";
+    $("readout-value").textContent = "";
+    $("stats").textContent = "";
+    return;
+  }
+  const picked = slots[state.picked];
+  $("readout-time").textContent = whenLabel(picked.t);
+  $("readout-value").textContent = `${fmt(picked.v, state.metric)} · ${m.rate(picked.v)[1]}`;
+  const v = known.map((s) => s.v);
   const avg = v.reduce((a, b) => a + b, 0) / v.length;
-  const f = (x) => fmt(x, state.metric, METRICS[state.metric].statDec);
-  $("stats").textContent = `MIN ${f(Math.min(...v))} · AVG ${f(avg)} · MAX ${f(Math.max(...v))}`;
+  $("stats").textContent = `MIN ${fmt(Math.min(...v), state.metric)} · AVG ${fmt(avg, state.metric)} · MAX ${fmt(Math.max(...v), state.metric)}`;
 }
 
 function showBanner(text) {

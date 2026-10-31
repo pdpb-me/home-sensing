@@ -1,22 +1,25 @@
 // Generates the dashboard app icons (PNG) with no dependencies: node tools/make_icons.js
-// Design: white thermometer on coral. Shapes are defined in 0..1 coordinates and anti-aliased by supersampling.
+// Design: three status bars (good, fair, poor) on a card. Shapes are defined in 0..1 coordinates and anti-aliased by supersampling.
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 
 const OUT = path.join(__dirname, "..", "dashboard", "icons");
-const CORAL = [216, 90, 48];
-const WHITE = [255, 255, 255];
+const CARD = [251, 249, 242];
+const INK = [22, 20, 15];
+const SAGE = [169, 209, 142];
+const MUSTARD = [242, 193, 78];
 const SUPERSAMPLE = 4;
+const BAR_OUTLINE = 0.03;
+const CARD_BORDER = 0.05;
+const BARS = [
+  { x0: 0.22, x1: 0.37, top: 0.5, color: SAGE },
+  { x0: 0.425, x1: 0.575, top: 0.34, color: MUSTARD },
+  { x0: 0.63, x1: 0.78, top: 0.21, color: INK },
+];
+const BARS_BOTTOM = 0.78;
 
 const inCircle = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
-
-// Vertical capsule: a rectangle with fully rounded ends
-function inCapsule(x, y, cx, top, bottom, halfWidth) {
-  if (y < top) return inCircle(x, y, cx, top, halfWidth);
-  if (y > bottom) return inCircle(x, y, cx, bottom, halfWidth);
-  return Math.abs(x - cx) <= halfWidth;
-}
 
 function inRoundedSquare(x, y, r) {
   const cx = Math.min(Math.max(x, r), 1 - r);
@@ -26,11 +29,20 @@ function inRoundedSquare(x, y, r) {
 
 // Returns [r, g, b, a] for one sample point. `fullBleed` fills the whole square (maskable / Apple icons).
 function sample(x, y, fullBleed) {
-  if (!fullBleed && !inRoundedSquare(x, y, 0.22)) return [0, 0, 0, 0];
-  const outer = inCapsule(x, y, 0.5, 0.22, 0.6, 0.075) || inCircle(x, y, 0.5, 0.68, 0.13);
-  const inner = inCapsule(x, y, 0.5, 0.36, 0.66, 0.03) || inCircle(x, y, 0.5, 0.68, 0.08);
-  const color = outer && !inner ? WHITE : CORAL;
-  return [...color, 255];
+  if (!fullBleed) {
+    if (!inRoundedSquare(x, y, 0.2)) return [0, 0, 0, 0];
+    const b = CARD_BORDER;
+    const inInner = inRoundedSquare((x - b) / (1 - 2 * b), (y - b) / (1 - 2 * b), 0.16);
+    if (!inInner) return [...INK, 255];
+  }
+  for (const bar of BARS) {
+    const inBar = x >= bar.x0 && x <= bar.x1 && y >= bar.top && y <= BARS_BOTTOM;
+    if (!inBar) continue;
+    const o = BAR_OUTLINE;
+    const inFill = x >= bar.x0 + o && x <= bar.x1 - o && y >= bar.top + o && y <= BARS_BOTTOM - o;
+    return [...(inFill ? bar.color : INK), 255];
+  }
+  return [...CARD, 255];
 }
 
 function render(size, fullBleed) {
