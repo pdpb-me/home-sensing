@@ -35,6 +35,10 @@ Sensor node (XIAO ESP32-S3) --Wi-Fi--> Supabase (database + login) <-- Dashboard
 2. Register each node: insert into `devices` its id, name and the SHA-256 hash of a random key.
 3. Copy `firmware/home_sensor/secrets.example.h` to `secrets.h` and fill it in (Wi-Fi, Supabase URL + publishable key, device id + key).
 
+## Power
+
+The node deep-sleeps between readings: it reads and redraws every 5 minutes and uploads every 30 minutes, or right away when the air turns poor. It stays awake while connected to a computer over USB, so to upload a sketch, plug it in and wait up to 5 minutes for the next wake, or press RESET.
+
 ## Known limitations
 
 - Uploads use HTTPS but don't verify the server certificate yet (`setInsecure()`). Worst case on a compromised network, someone could capture a device key, which only allows adding readings for that device.

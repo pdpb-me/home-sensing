@@ -127,7 +127,7 @@ const RANGES = {
   "30d": { ms: 30 * 864e5,  bucket: "1 hour",     bucketMs: 3600e3 },
   "1y":  { ms: 365 * 864e5, bucket: "12 hours",   bucketMs: 43200e3 },
 };
-const OFFLINE_AFTER_MS = 3 * 60e3;
+const OFFLINE_AFTER_MS = 45 * 60e3;  // the node uploads every 30 minutes
 // Same limits as the firmware
 const CO2_FAIR_PPM = 800;
 const CO2_POOR_PPM = 1200;

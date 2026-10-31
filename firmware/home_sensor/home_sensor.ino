@@ -1,5 +1,7 @@
 // Home sensor: XIAO ESP32-S3 Plus + SCD41 (CO2, temperature, humidity) + WeAct 1.54" e-paper (SSD1681) + LiPo
-// Reads every minute, uploads to Supabase over Wi-Fi, refreshes the e-paper every 5 minutes.
+// Wakes from deep sleep every 5 minutes to read the sensor and redraw the e-paper, and uploads to Supabase
+// over Wi-Fi every 30 minutes, or right away when the air turns poor. Stays awake while a USB host is
+// connected, so the Serial Monitor and uploading sketches keep working.
 //
 // Setup:
 //   - Copy secrets.example.h to secrets.h (same folder) and fill it in. secrets.h is git-ignored.
@@ -18,6 +20,9 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include <esp_sleep.h>
+#include <esp_sntp.h>
+#include <driver/gpio.h>
 #include <GxEPD2_BW.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
@@ -32,15 +37,13 @@
 #define DEVICE_ALTITUDE_M 132       // metres above sea level, for CO2 pressure compensation
 #endif
 #ifndef DEVICE_TEMP_OFFSET_C
-#define DEVICE_TEMP_OFFSET_C 2.0f   // self-heating; set against a Suunto watch with the sensor in free air, redo in an enclosure
+#define DEVICE_TEMP_OFFSET_C 0.5f   // self-heating, small in single-shot mode; provisional, tune against a reference thermometer
 #endif
 
 // ---------- Settings ----------
-const uint32_t READ_SECONDS = 60;       // read + upload interval
-const uint8_t DISPLAY_EVERY = 5;        // redraw the e-paper every N readings
+const uint32_t READ_SECONDS = 300;      // read + redraw interval; the SCD41's self-calibration assumes 5 minutes
+const uint8_t UPLOAD_EVERY = 6;         // upload every N readings
 const uint8_t FULL_REFRESH_EVERY = 12;  // full refresh every N redraws to clear ghosting
-const uint32_t SENSOR_POLL_MS = 1000;   // how often to ask the SCD41 for new data (it makes some every 5 s)
-const uint32_t SENSOR_MAX_AGE_MS = 30000;  // older data counts as missing and restarts the sensor
 const float CO2_FAIR_PPM = 800;         // below this the air is good
 const float CO2_POOR_PPM = 1200;        // from here on, time to open the window
 const float HUMIDITY_DRY = 40;          // comfortable humidity is between these two
@@ -50,7 +53,7 @@ const float BATTERY_MIN_V = 2.5f;       // below this, no battery is connected
 const float CHARGER_MIN_V = 4.25f;      // above this, only a charger can be driving the pin
 const char* TIMEZONE = "CET-1CEST,M3.5.0,M10.5.0/3";  // Central Europe, with daylight saving
 
-const size_t QUEUE_CAPACITY = 1440;     // keeps 24 h of readings while offline
+const size_t QUEUE_CAPACITY = 288;      // keeps 24 h of readings while offline; must fit in RTC memory
 const size_t UPLOAD_BATCH = 60;         // readings per upload request
 
 // ---------- Pins ----------
@@ -84,47 +87,40 @@ struct Sample {
   float t, h, co2, batteryV;
   bool charging;
 };
-Sample pending[QUEUE_CAPACITY];
-size_t qHead = 0, qCount = 0;
 
-time_t lastUploadAt = 0;
-uint32_t readingCount = 0;
-uint32_t displayCount = 0;
-AirLevel shownAir = AIR_UNKNOWN;
-uint32_t lastReadMs = 0;
-uint32_t lastPollMs = 0;
-
-// Latest SCD41 data
-float scdTempC = NAN, scdHumidity = NAN, scdCo2Ppm = NAN;
-bool scdHasData = false;
-uint32_t scdDataAtMs = 0;
+// RTC memory survives deep sleep; everything else starts over at each wake
+RTC_DATA_ATTR Sample pending[QUEUE_CAPACITY];
+RTC_DATA_ATTR size_t qHead = 0, qCount = 0;
+RTC_DATA_ATTR bool uploadOk = false;  // whether the last upload attempt worked
+RTC_DATA_ATTR uint32_t readingsSinceUpload = 0;
+RTC_DATA_ATTR uint32_t displayCount = 0;
+RTC_DATA_ATTR AirLevel shownAir = AIR_UNKNOWN;
+RTC_DATA_ATTR bool scdReady = false;
 
 // ---------- Sensors ----------
 
-void startScd41() {
+// Keeps its settings while powered, so this only runs after a power-up or a sensor error
+void configureScd41() {
   // The sensor keeps measuring through an ESP32 reset, and only accepts settings when stopped
   scd4x.wakeUp();
   scd4x.stopPeriodicMeasurement();
   delay(500);
   scd4x.setSensorAltitude(DEVICE_ALTITUDE_M);
   scd4x.setTemperatureOffset(DEVICE_TEMP_OFFSET_C);
-  if (scd4x.startPeriodicMeasurement() != 0) Serial.println("SCD41 not found");
-  scdHasData = false;
-  scdDataAtMs = millis();
 }
 
-// Keeps the newest measurement; the SCD41 has one ready every 5 s
-void pollScd41() {
-  bool ready = false;
-  if (scd4x.getDataReadyStatus(ready) != 0 || !ready) return;
+// One measurement; takes 5 s
+bool measureScd41(Reading& r) {
   uint16_t co2 = 0;
   float t = NAN, h = NAN;
-  if (scd4x.readMeasurement(co2, t, h) != 0 || co2 == 0) return;
-  scdCo2Ppm = co2;
-  scdTempC = t;
-  scdHumidity = h;
-  scdHasData = true;
-  scdDataAtMs = millis();
+  if (scd4x.measureSingleShot() != 0 || scd4x.readMeasurement(co2, t, h) != 0 || co2 == 0) {
+    Serial.println("SCD41 not found");
+    return false;
+  }
+  r.co2Ppm = co2;
+  r.tempC = t;
+  r.humidity = h;
+  return true;
 }
 
 AirLevel airLevel(float co2) {
@@ -158,15 +154,11 @@ float batteryPercent(float v) {
 Reading readSensors() {
   Reading r;
 
-  pollScd41();
-  if (millis() - scdDataAtMs > SENSOR_MAX_AGE_MS) {
-    Serial.println("No fresh SCD41 data, restarting it");
-    startScd41();
-  } else if (scdHasData) {
-    r.tempC = scdTempC;
-    r.humidity = scdHumidity;
-    r.co2Ppm = scdCo2Ppm;
+  if (!scdReady) {
+    configureScd41();
+    scdReady = measureScd41(r);  // the first measurement after power-up is not reliable, so it only tests the sensor
   }
+  if (scdReady) scdReady = measureScd41(r);
 
   r.batteryV = readBatteryVolts();
   // A USB host is detected directly. A plain wall charger can only be spotted by its voltage.
@@ -179,22 +171,34 @@ Reading readSensors() {
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
-  for (int i = 0; i < 30 && WiFi.status() != WL_CONNECTED; i++) {
-    delay(500);
-    Serial.print('.');
+  for (int i = 0; i < 150 && WiFi.status() != WL_CONNECTED; i++) {
+    delay(100);
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf(" connected, IP %s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println(" not yet, will keep trying");
+    Serial.println(" failed");
   }
+}
+
+void disconnectWiFi() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
 }
 
 bool clockIsSet() {
   return time(nullptr) > 1700000000;  // any date after Nov 2023 means NTP has synced
+}
+
+// The clock drifts during deep sleep, so it is corrected at every connection
+void syncClock() {
+  sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
+  configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");
+  for (int i = 0; i < 50 && sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED; i++) {
+    delay(100);
+  }
 }
 
 void enqueue(const Sample& s) {
@@ -256,7 +260,6 @@ bool uploadBatch() {
   }
   qHead = (qHead + n) % QUEUE_CAPACITY;
   qCount -= n;
-  lastUploadAt = time(nullptr);
   Serial.printf("Uploaded %u reading(s), %s new, %u still queued\n",
                 (unsigned)n, response.c_str(), (unsigned)qCount);
   return true;
@@ -266,11 +269,12 @@ void uploadQueue() {
   if (qCount == 0) return;
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("No Wi-Fi, %u reading(s) queued\n", (unsigned)qCount);
-    WiFi.reconnect();
+    uploadOk = false;
     return;
   }
-  for (int i = 0; i < 5 && qCount > 0; i++) {  // after an outage, catch up a few batches per minute
-    if (!uploadBatch()) return;
+  for (int i = 0; i < 5 && qCount > 0; i++) {  // after an outage, catch up a few batches at a time
+    uploadOk = uploadBatch();
+    if (!uploadOk) return;
   }
 }
 
@@ -366,7 +370,7 @@ void drawBatteryIcon(const Reading& r, int16_t x, int16_t top) {
   }
 }
 
-// Wi-Fi arcs: everything has reached the cloud. Struck through: offline, or readings still queued.
+// Wi-Fi arcs: the last upload worked. Struck through: it failed, so readings are waiting for the next try.
 void drawWifiIcon(int16_t cx, int16_t dotY) {
   display.fillRect(cx - 2, dotY - 2, 4, 4, GxEPD_BLACK);
   for (int16_t r = 5; r <= 13; r += 4) {
@@ -378,8 +382,7 @@ void drawWifiIcon(int16_t cx, int16_t dotY) {
     }
   }
 
-  bool allSent = WiFi.status() == WL_CONNECTED && lastUploadAt != 0 && qCount == 0;
-  if (!allSent) {
+  if (!uploadOk) {
     for (int16_t i = -2; i <= 3; i++) {
       bool black = i == 0 || i == 1;
       display.drawLine(cx - 11, dotY + 1 + i, cx + 11, dotY - 14 + i, black ? GxEPD_BLACK : GxEPD_WHITE);
@@ -394,8 +397,8 @@ void drawScreen(const Reading& r) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(GxEPD_BLACK);
 
-  drawWifiIcon(17, 16);
-  drawBatteryIcon(r, 168, 4);
+  drawWifiIcon(46, 16);
+  drawBatteryIcon(r, 139, 4);
   display.drawFastHLine(0, 20, w, GxEPD_BLACK);
 
   drawTemperature(r.tempC, 67);
@@ -424,7 +427,7 @@ void updateDisplay(const Reading& r) {
   do {
     drawScreen(r);
   } while (display.nextPage());
-  display.powerOff();
+  display.hibernate();  // draws almost nothing and keeps the image, ready for the next partial refresh
 
   displayCount++;
   shownAir = airLevel(r.co2Ppm);
@@ -432,10 +435,22 @@ void updateDisplay(const Reading& r) {
 
 // ---------- Main ----------
 
-void takeReading() {
+void runCycle() {
   Reading r = readSensors();
   Serial.printf("T=%.2f C  RH=%.1f %%  CO2=%.0f ppm  Battery=%.2f V (%.0f %%)%s\n", r.tempC, r.humidity, r.co2Ppm,
                 r.batteryV, batteryPercent(r.batteryV), r.charging ? " charging" : "");
+
+  // A failed upload waits for the next regular one, so being offline doesn't drain the battery
+  AirLevel air = airLevel(r.co2Ppm);
+  readingsSinceUpload++;
+  bool firstCycle = displayCount == 0;
+  bool uploadDue = firstCycle || readingsSinceUpload >= UPLOAD_EVERY || (air == AIR_POOR && shownAir != AIR_POOR);
+
+  bool useWiFi = uploadDue || !clockIsSet();
+  if (useWiFi) {
+    connectWiFi();
+    if (WiFi.status() == WL_CONNECTED) syncClock();
+  }
 
   bool hasData = !isnan(r.tempC) || !isnan(r.co2Ppm);
   if (hasData && clockIsSet()) {
@@ -443,51 +458,50 @@ void takeReading() {
   } else if (hasData) {
     Serial.println("Clock not synced yet: reading shown but not stored");
   }
-  uploadQueue();
 
-  // A change in air quality is shown right away, without waiting for the next regular redraw
-  if (readingCount % DISPLAY_EVERY == 0 || airLevel(r.co2Ppm) != shownAir) updateDisplay(r);
-  readingCount++;
+  if (uploadDue) {
+    uploadQueue();
+    readingsSinceUpload = 0;
+  }
+  if (useWiFi) disconnectWiFi();
+
+  updateDisplay(r);
 }
 
 void setup() {
-  setCpuFrequencyMhz(80);  // plenty for this job, and less self-heating near the sensor
+  setCpuFrequencyMhz(80);  // plenty for this job
   Serial.begin(115200);
+  bool wokeFromSleep = esp_reset_reason() == ESP_RST_DEEPSLEEP;
+
+  gpio_deep_sleep_hold_dis();
+  gpio_hold_dis((gpio_num_t)PIN_EPD_CS);
+  gpio_hold_dis((gpio_num_t)PIN_EPD_RST);
+
   Wire.begin(PIN_SDA, PIN_SCL);
   scd4x.begin(Wire, SCD41_I2C_ADDR_62);
-  startScd41();
 
   SPI.begin(PIN_EPD_SCK, -1, PIN_EPD_MOSI, PIN_EPD_CS);  // display is write-only, no MISO
   display.epd2.selectSPI(SPI, SPISettings(4000000, MSBFIRST, SPI_MODE0));
-  display.init(0, true, 2, false);  // 0 = no display-library debug output on Serial
+  display.init(0, !wokeFromSleep, 2, false);  // 0 = no display-library debug output; after a wake, keep the image
   display.setRotation(3);  // 0 = normal, each step turns the image 90° clockwise
-
-  connectWiFi();
-  configTzTime(TIMEZONE, "pool.ntp.org", "time.google.com");
-  struct tm now;
-  if (getLocalTime(&now, 10000)) {
-    Serial.printf("Clock synced: %04d-%02d-%02d %02d:%02d\n",
-                  now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min);
-  }
-
-  // First SCD41 data arrives about 5 s after starting it
-  while (!scdHasData && millis() - scdDataAtMs < 7000) {
-    pollScd41();
-    delay(200);
-  }
-
-  lastReadMs = millis();
-  takeReading();
 }
 
 void loop() {
-  if (millis() - lastPollMs >= SENSOR_POLL_MS) {
-    lastPollMs = millis();
-    pollScd41();
+  uint32_t startedMs = millis();
+  runCycle();
+  uint32_t elapsedMs = millis() - startedMs;
+  uint32_t waitMs = elapsedMs < READ_SECONDS * 1000UL ? READ_SECONDS * 1000UL - elapsedMs : 1000;
+
+  if (HWCDC::isPlugged()) {  // deep sleep would drop the USB connection
+    Serial.printf("USB connected: staying awake, next reading in %u s\n", (unsigned)(waitMs / 1000));
+    delay(waitMs);
+    return;
   }
-  if (millis() - lastReadMs >= READ_SECONDS * 1000UL) {
-    lastReadMs = millis();
-    takeReading();
-  }
-  delay(100);
+
+  // Keeps the display's control lines steady during sleep
+  gpio_hold_en((gpio_num_t)PIN_EPD_CS);
+  gpio_hold_en((gpio_num_t)PIN_EPD_RST);
+  gpio_deep_sleep_hold_en();
+  esp_sleep_enable_timer_wakeup(waitMs * 1000ULL);
+  esp_deep_sleep_start();
 }
