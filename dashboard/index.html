@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D85A30'/><rect x='13' y='6' width='6' height='14' rx='3' fill='white'/><circle cx='16' cy='22' r='5' fill='white'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
   :root {
     --paper: #f2eee3; --card: #fbf9f2; --ink: #16140f; --muted: #5f5a4d;
@@ -20,7 +20,6 @@
     --grid: rgba(22,20,15,0.16);
     --body: "Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
     --mono: "JetBrains Mono", Consolas, monospace;
-    --dots: "DotGothic16", "JetBrains Mono", monospace;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.4 var(--body); }
@@ -64,7 +63,7 @@
   .row.on, .row.on:hover { background: var(--accent); color: var(--on-color); box-shadow: 2px 2px 0 var(--ink); }
   .row .label { display: block; font-size: 17px; font-weight: 700; line-height: 1.2; }
   .row .sub { display: block; font: 400 13px var(--mono); }
-  .row .value { font: 400 30px/1 var(--dots); white-space: nowrap; }
+  .row .value { font: 500 28px/1 var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
 
   .box { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 18px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
   .box-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
