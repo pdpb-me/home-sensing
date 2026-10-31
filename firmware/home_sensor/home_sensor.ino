@@ -32,7 +32,7 @@
 #define DEVICE_ALTITUDE_M 132       // metres above sea level, for CO2 pressure compensation
 #endif
 #ifndef DEVICE_TEMP_OFFSET_C
-#define DEVICE_TEMP_OFFSET_C 1.0f   // self-heating; provisional, tune against a reference thermometer in the final position
+#define DEVICE_TEMP_OFFSET_C 2.0f   // self-heating; set against a Suunto watch with the sensor in free air, redo in an enclosure
 #endif
 
 // ---------- Settings ----------
@@ -43,6 +43,8 @@ const uint32_t SENSOR_POLL_MS = 1000;   // how often to ask the SCD41 for new da
 const uint32_t SENSOR_MAX_AGE_MS = 30000;  // older data counts as missing and restarts the sensor
 const float CO2_FAIR_PPM = 800;         // below this the air is good
 const float CO2_POOR_PPM = 1200;        // from here on, time to open the window
+const float HUMIDITY_DRY = 40;          // comfortable humidity is between these two
+const float HUMIDITY_WET = 60;
 const float BATTERY_DIVIDER = 2.0f;     // calibrate against a multimeter
 const float BATTERY_MIN_V = 2.5f;       // below this, no battery is connected
 const float CHARGER_MIN_V = 4.25f;      // above this, only a charger can be driving the pin
@@ -314,56 +316,73 @@ void drawTemperature(float t, int16_t baseline) {
   display.print("C");
 }
 
-void drawDroplet(int16_t cx, int16_t top) {
-  display.fillCircle(cx, top + 17, 8, GxEPD_BLACK);
-  display.fillTriangle(cx, top, cx - 7, top + 13, cx + 7, top + 13, GxEPD_BLACK);
+// Droplet + Dry / OK / Humid, centered as one group
+void drawHumidityStatus(float humidity, int16_t cx, int16_t top, int16_t baseline) {
+  const char* text = isnan(humidity) ? "--" : humidity < HUMIDITY_DRY ? "Dry" : humidity > HUMIDITY_WET ? "Humid" : "OK";
+  int16_t x1, y1;
+  uint16_t tw, th;
+  display.setFont(&FreeSans9pt7b);
+  display.getTextBounds(text, 0, 0, &x1, &y1, &tw, &th);
+
+  const int16_t dropW = 16, gap = 6;
+  int16_t left = cx - (dropW + gap + tw) / 2;
+  int16_t dropX = left + dropW / 2;
+  display.fillCircle(dropX, top + 17, 8, GxEPD_BLACK);
+  display.fillTriangle(dropX, top, dropX - 7, top + 13, dropX + 7, top + 13, GxEPD_BLACK);
+
+  display.setCursor(left + dropW + gap - x1, baseline);
+  display.print(text);
 }
 
 // The advice line: black when it is time to act, so it can be read from across the room
 void drawAirAdvice(AirLevel level) {
   const int16_t w = display.width();
   if (level == AIR_POOR) {
-    display.fillRect(0, 130, w, 30, GxEPD_BLACK);
+    display.fillRect(0, 152, w, 48, GxEPD_BLACK);
     display.setTextColor(GxEPD_WHITE);
-    drawCentered("Open window", w / 2, 153, &FreeSansBold12pt7b);
+    drawCentered("Open window", w / 2, 184, &FreeSansBold12pt7b);
     display.setTextColor(GxEPD_BLACK);
   } else {
     const char* text = level == AIR_GOOD ? "Air good" : level == AIR_FAIR ? "Air fair" : "Air --";
-    drawCentered(text, w / 2, 153, &FreeSansBold12pt7b);
+    drawCentered(text, w / 2, 184, &FreeSansBold12pt7b);
   }
 }
 
 // Fill shows the charge, a bolt means charging, a strike-through means no battery
-void drawBatteryIcon(const Reading& r, int16_t cx, int16_t top) {
-  const int16_t iconW = 36, iconH = 18, nubW = 3;
-  int16_t x = cx - (iconW + nubW) / 2;
+void drawBatteryIcon(const Reading& r, int16_t x, int16_t top) {
+  const int16_t iconW = 26, iconH = 12, nubW = 2;
   display.drawRect(x, top, iconW, iconH, GxEPD_BLACK);
   display.drawRect(x + 1, top + 1, iconW - 2, iconH - 2, GxEPD_BLACK);
-  display.fillRect(x + iconW, top + 5, nubW, iconH - 10, GxEPD_BLACK);
+  display.fillRect(x + iconW, top + 3, nubW, iconH - 6, GxEPD_BLACK);
 
   int16_t mid = x + iconW / 2;
   if (isnan(r.batteryV)) {
-    display.drawLine(x + 4, top + iconH - 4, x + iconW - 5, top + 3, GxEPD_BLACK);
+    display.drawLine(x + 3, top + iconH - 3, x + iconW - 4, top + 2, GxEPD_BLACK);
   } else if (r.charging) {
-    display.fillTriangle(mid + 3, top + 2, mid - 6, top + 10, mid + 1, top + 10, GxEPD_BLACK);
-    display.fillTriangle(mid - 3, top + iconH - 3, mid + 6, top + 7, mid - 1, top + 7, GxEPD_BLACK);
+    display.fillTriangle(mid + 2, top + 2, mid - 4, top + 6, mid, top + 6, GxEPD_BLACK);
+    display.fillTriangle(mid - 2, top + 9, mid + 4, top + 5, mid, top + 5, GxEPD_BLACK);
   } else {
     display.fillRect(x + 3, top + 3, (iconW - 6) * batteryPercent(r.batteryV) / 100, iconH - 6, GxEPD_BLACK);
   }
 }
 
-// Solid cloud: everything has reached the cloud. Struck through: offline, or readings still queued.
-void drawCloudIcon(int16_t cx, int16_t top) {
-  display.fillCircle(cx - 10, top + 13, 6, GxEPD_BLACK);
-  display.fillCircle(cx + 1, top + 9, 9, GxEPD_BLACK);
-  display.fillCircle(cx + 10, top + 13, 6, GxEPD_BLACK);
-  display.fillRect(cx - 10, top + 13, 20, 7, GxEPD_BLACK);
+// Wi-Fi arcs: everything has reached the cloud. Struck through: offline, or readings still queued.
+void drawWifiIcon(int16_t cx, int16_t dotY) {
+  display.fillRect(cx - 2, dotY - 2, 4, 4, GxEPD_BLACK);
+  for (int16_t r = 5; r <= 13; r += 4) {
+    for (int16_t thick = 0; thick < 2; thick++) {
+      for (int16_t deg = 45; deg <= 135; deg++) {
+        float a = deg * DEG_TO_RAD;
+        display.drawPixel(cx + (r + thick) * cos(a), dotY - (r + thick) * sin(a), GxEPD_BLACK);
+      }
+    }
+  }
 
   bool allSent = WiFi.status() == WL_CONNECTED && lastUploadAt != 0 && qCount == 0;
   if (!allSent) {
     for (int16_t i = -2; i <= 3; i++) {
       bool black = i == 0 || i == 1;
-      display.drawLine(cx - 15, top + 19 + i, cx + 15, top + i, black ? GxEPD_BLACK : GxEPD_WHITE);
+      display.drawLine(cx - 11, dotY + 1 + i, cx + 11, dotY - 14 + i, black ? GxEPD_BLACK : GxEPD_WHITE);
     }
   }
 }
@@ -375,25 +394,26 @@ void drawScreen(const Reading& r) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(GxEPD_BLACK);
 
-  drawTemperature(r.tempC, 46);
-  display.drawFastHLine(10, 58, w - 20, GxEPD_BLACK);
+  drawWifiIcon(17, 16);
+  drawBatteryIcon(r, 168, 4);
+  display.drawFastHLine(0, 20, w, GxEPD_BLACK);
 
-  drawDroplet(w / 4, 65);
+  drawTemperature(r.tempC, 67);
+  display.drawFastHLine(10, 79, w - 20, GxEPD_BLACK);
+
+  drawHumidityStatus(r.humidity, w / 4, 84, 102);
   if (isnan(r.humidity)) strcpy(buf, "--%");
   else snprintf(buf, sizeof(buf), "%.0f%%", r.humidity);
-  drawCentered(buf, w / 4, 122, &FreeSansBold18pt7b);
+  drawCentered(buf, w / 4, 141, &FreeSansBold18pt7b);
 
-  display.drawFastVLine(w / 2, 64, 60, GxEPD_BLACK);
+  display.drawFastVLine(w / 2, 84, 60, GxEPD_BLACK);
 
-  drawCentered("CO2", 3 * w / 4, 84, &FreeSans9pt7b);
+  drawCentered("CO2", 3 * w / 4, 102, &FreeSans9pt7b);
   if (isnan(r.co2Ppm)) strcpy(buf, "----");
   else snprintf(buf, sizeof(buf), "%.0f", r.co2Ppm);
-  drawCentered(buf, 3 * w / 4, 122, &FreeSansBold18pt7b);
+  drawCentered(buf, 3 * w / 4, 141, &FreeSansBold18pt7b);
 
   drawAirAdvice(airLevel(r.co2Ppm));
-
-  drawBatteryIcon(r, w / 4, 170);
-  drawCloudIcon(3 * w / 4, 169);
 }
 
 void updateDisplay(const Reading& r) {

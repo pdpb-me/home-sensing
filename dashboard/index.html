@@ -131,6 +131,8 @@ const OFFLINE_AFTER_MS = 3 * 60e3;
 // Same limits as the firmware
 const CO2_FAIR_PPM = 800;
 const CO2_POOR_PPM = 1200;
+const HUMIDITY_DRY = 40;
+const HUMIDITY_WET = 60;
 const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -244,6 +246,13 @@ function ago(ms) {
   return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
+function addRating(metric, text, level) {
+  const rating = document.createElement("span");
+  rating.className = "rating " + level;
+  rating.textContent = text;
+  $("v-" + metric).append(rating);
+}
+
 function renderCards(latest, day) {
   for (const key of Object.keys(METRICS)) {
     $("v-" + key).textContent = latest ? fmt(latest[key], key) : "--";
@@ -252,12 +261,14 @@ function renderCards(latest, day) {
       ? `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`
       : "No data in the last 24 h";
   }
+  if (latest?.humidity != null) {
+    if (latest.humidity < HUMIDITY_DRY) addRating("humidity", "Dry", "fair");
+    else if (latest.humidity > HUMIDITY_WET) addRating("humidity", "Humid", "fair");
+    else addRating("humidity", "OK", "good");
+  }
   if (latest?.co2_ppm != null) {
     const level = latest.co2_ppm < CO2_FAIR_PPM ? "good" : latest.co2_ppm < CO2_POOR_PPM ? "fair" : "poor";
-    const rating = document.createElement("span");
-    rating.className = "rating " + level;
-    rating.textContent = level[0].toUpperCase() + level.slice(1);
-    $("v-co2_ppm").append(rating);
+    addRating("co2_ppm", level[0].toUpperCase() + level.slice(1), level);
     if (level === "poor") $("s-co2_ppm").textContent = "Time to open the window";
   }
   if (latest?.charging) $("v-battery_pct").textContent = "Charging";
