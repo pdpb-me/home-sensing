@@ -21,7 +21,10 @@ create table public.readings (
   ts           timestamptz not null,       -- when the reading was taken (device clock, NTP-synced)
   temp_c       real,
   humidity     real,
-  pressure_hpa real,
+  co2_ppm      real,
+  battery_v    real,
+  battery_pct  real,                       -- null while charging: the voltage says nothing about charge then
+  charging     boolean,
   unique (device_id, ts)                   -- re-sent readings are ignored, not duplicated
 );
 
@@ -58,13 +61,14 @@ create function public.readings_bucketed(
   p_to        timestamptz,
   p_bucket    interval
 )
-returns table (ts timestamptz, temp_c real, humidity real, pressure_hpa real)
+returns table (ts timestamptz, temp_c real, humidity real, co2_ppm real, battery_pct real)
 language sql stable security invoker set search_path = ''
 as $$
   select date_bin(p_bucket, r.ts, timestamptz '2000-01-01') as ts,
          avg(r.temp_c)::real,
          avg(r.humidity)::real,
-         avg(r.pressure_hpa)::real
+         avg(r.co2_ppm)::real,
+         avg(r.battery_pct)::real
   from public.readings r
   where r.device_id = p_device_id and r.ts >= p_from and r.ts < p_to
   group by 1
@@ -73,7 +77,7 @@ $$;
 
 -- ---------- Write access for sensor nodes ----------
 
--- p_readings: JSON array like [{"ts": 1760371200, "t": 21.4, "h": 48.2, "p": 1013.1}, ...]
+-- p_readings: JSON array like [{"ts": 1760371200, "t": 21.4, "h": 48.2, "c": 612, "bv": 3.92, "bp": 66, "chg": false}, ...]
 -- ts is Unix seconds (UTC). Returns how many new rows were stored.
 create function public.ingest(p_device_id text, p_key text, p_readings jsonb)
 returns integer
@@ -90,12 +94,15 @@ begin
     raise exception 'invalid device credentials' using errcode = '28000';
   end if;
 
-  insert into public.readings (device_id, ts, temp_c, humidity, pressure_hpa)
+  insert into public.readings (device_id, ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging)
   select p_device_id,
          to_timestamp((r ->> 'ts')::double precision),
          (r ->> 't')::real,
          (r ->> 'h')::real,
-         (r ->> 'p')::real
+         (r ->> 'c')::real,
+         (r ->> 'bv')::real,
+         (r ->> 'bp')::real,
+         (r ->> 'chg')::boolean
   from jsonb_array_elements(p_readings) as r
   on conflict (device_id, ts) do nothing;
 

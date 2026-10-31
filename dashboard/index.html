@@ -43,6 +43,10 @@
   .card .label { font-size: 14px; color: var(--muted); }
   .card .value { font-size: 28px; font-weight: 600; margin: 2px 0; }
   .card .sub { font-size: 13px; color: var(--muted); }
+  .rating { font-size: 15px; margin-left: 6px; }
+  .rating.good { color: var(--ok); }
+  .rating.fair { color: var(--warn); }
+  .rating.poor { color: var(--danger); }
   .ranges { display: flex; gap: 6px; flex-wrap: wrap; margin: 20px 0 4px; }
   .ranges button.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
   #chart { width: 100%; height: 360px; }
@@ -87,7 +91,8 @@
     <div class="cards">
       <button class="card on" data-metric="temp_c"><div class="label">Temperature</div><div class="value" id="v-temp_c">--</div><div class="sub" id="s-temp_c">&nbsp;</div></button>
       <button class="card" data-metric="humidity"><div class="label">Humidity</div><div class="value" id="v-humidity">--</div><div class="sub" id="s-humidity">&nbsp;</div></button>
-      <button class="card" data-metric="pressure_hpa"><div class="label">Pressure</div><div class="value" id="v-pressure_hpa">--</div><div class="sub" id="s-pressure_hpa">&nbsp;</div></button>
+      <button class="card" data-metric="co2_ppm"><div class="label">CO₂</div><div class="value" id="v-co2_ppm">--</div><div class="sub" id="s-co2_ppm">&nbsp;</div></button>
+      <button class="card" data-metric="battery_pct"><div class="label">Battery</div><div class="value" id="v-battery_pct">--</div><div class="sub" id="s-battery_pct">&nbsp;</div></button>
     </div>
 
     <div class="ranges">
@@ -112,7 +117,8 @@ const SUPABASE_KEY = "sb_publishable_aTP3lF5WX0hwv7i_otntRA_c_Mtm29V";
 const METRICS = {
   temp_c:       { label: "Temperature", unit: " °C",  dec: 1, color: "#D85A30" },
   humidity:     { label: "Humidity",    unit: " %",   dec: 0, color: "#378ADD" },
-  pressure_hpa: { label: "Pressure",    unit: " hPa", dec: 0, color: "#7F77DD" },
+  co2_ppm:      { label: "CO₂",         unit: "",     dec: 0, color: "#1D9E75" },
+  battery_pct:  { label: "Battery",     unit: " %",   dec: 0, color: "#7F77DD" },
 };
 // Bucket sizes keep every range around 700 points (the API returns at most 1000 rows)
 const RANGES = {
@@ -122,6 +128,9 @@ const RANGES = {
   "1y":  { ms: 365 * 864e5, bucket: "12 hours",   bucketMs: 43200e3 },
 };
 const OFFLINE_AFTER_MS = 3 * 60e3;
+// Same limits as the firmware
+const CO2_FAIR_PPM = 800;
+const CO2_POOR_PPM = 1200;
 const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -202,7 +211,7 @@ async function bucketed(rangeKey) {
 async function refresh() {
   try {
     const [latestRes, day, rows] = await Promise.all([
-      db.from("readings").select("ts, temp_c, humidity, pressure_hpa")
+      db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
         .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
       bucketed("24h"),
       state.range === "24h" ? null : bucketed(state.range),
@@ -241,8 +250,18 @@ function renderCards(latest, day) {
     const values = day.map((r) => r[key]).filter((v) => v !== null);
     $("s-" + key).textContent = values.length
       ? `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`
-      : key === "humidity" ? "No humidity sensor yet" : "No data in the last 24 h";
+      : "No data in the last 24 h";
   }
+  if (latest?.co2_ppm != null) {
+    const level = latest.co2_ppm < CO2_FAIR_PPM ? "good" : latest.co2_ppm < CO2_POOR_PPM ? "fair" : "poor";
+    const rating = document.createElement("span");
+    rating.className = "rating " + level;
+    rating.textContent = level[0].toUpperCase() + level.slice(1);
+    $("v-co2_ppm").append(rating);
+    if (level === "poor") $("s-co2_ppm").textContent = "Time to open the window";
+  }
+  if (latest?.charging) $("v-battery_pct").textContent = "Charging";
+  if (latest?.battery_v != null) $("s-battery_pct").textContent = Number(latest.battery_v).toFixed(2) + " V";
   const status = $("status");
   if (!latest) {
     status.className = "status stale";
@@ -310,6 +329,12 @@ function renderChart() {
     series: [{
       name: m.label, type: "line", showSymbol: false, connectNulls: false, data: seriesData(),
       lineStyle: { width: 2, color: m.color }, itemStyle: { color: m.color }, areaStyle: { color: m.color, opacity: 0.08 },
+      markLine: {
+        silent: true, symbol: "none", lineStyle: { color: muted, type: "dashed" }, label: { color: muted, position: "insideEndTop" },
+        data: state.metric === "co2_ppm"
+          ? [{ yAxis: CO2_FAIR_PPM, label: { formatter: "Fair" } }, { yAxis: CO2_POOR_PPM, label: { formatter: "Poor" } }]
+          : [],
+      },
     }],
   });
   renderStats();
