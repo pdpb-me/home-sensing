@@ -67,7 +67,7 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 ## Notes
 
 - The only battery Pedro has is on the Hub. The Node runs from USB.
-- The `entrance` node is retired; its 4112 readings stay as history.
+- The `entrance` node is gone: on 2026-11-15 (evening) Pedro had its device row and its 4112 readings deleted from Supabase. `firmware/home_sensor` stays in the repo as reference. The Rooms menu ("All rooms" / a retired device) no longer appears, since no `legacy` device is left.
 - `HANDOFF.md` and `Hardware/` stay local (git-ignored). The low-battery band may cover the message signature.
 - Pedro switched the conversation to English on 2026-11-15 and wants to be told when he has to do something, otherwise the work goes on without check-ins.
 
