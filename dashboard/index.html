@@ -120,11 +120,11 @@
   .send { background: var(--ink); color: var(--card); }
   button:disabled { opacity: 0.5; cursor: default; }
   .item { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 2px 2px 0 var(--ink); padding: 10px 12px; }
-  .item .paper { width: 125px; flex: none; border: 2px solid var(--ink); }
+  .item .paper { width: 125px; flex: none; border: 2px solid var(--ink); box-sizing: content-box; }
   .item .text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
   .item .head { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; }
   .item .label { font-size: 17px; font-weight: 700; }
-  .item .sub { font: 400 13px var(--mono); }
+  .item .sub { font: 400 13px var(--mono); overflow-wrap: anywhere; }
   .item button { min-height: 36px; padding: 0 12px; font-size: 14px; margin-top: 4px; }
   [hidden] { display: none !important; }
 </style>
@@ -294,7 +294,7 @@ const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const state = { view: "rooms", device: null, devices: [], names: {}, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
+const state = { view: "rooms", refreshes: 0, device: null, devices: [], names: {}, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
 const wide = window.matchMedia("(min-width: 900px)");
 
 // ---------- Auth ----------
@@ -363,7 +363,9 @@ async function startApp() {
   initControls();
   initEditor();
   showView("rooms");
-  setInterval(refresh, REFRESH_MS);
+  // No polling while the page is in the background; one refresh when it comes back
+  setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
 
 function showView(view) {
@@ -390,22 +392,27 @@ async function bucketed(rangeKey) {
   return data;
 }
 
+// Refreshes overlap (the timer, a tab or room change, a send), and their answers can come back in any
+// order. Each one gets a number, and only the newest may draw: isLatest() says whether it still is.
 async function refresh() {
+  const number = ++state.refreshes;
+  const isLatest = () => number === state.refreshes;
   try {
     if (state.view === "rooms") {
-      await refreshRoom();
+      await refreshRoom(isLatest);
     } else {
       await loadDevices();
-      if (state.view === "message") await refreshMessages();
+      if (!isLatest()) return;
+      if (state.view === "message") await refreshMessages(isLatest);
       else renderDevices();
     }
-    $("banner").hidden = true;
+    if (isLatest()) $("banner").hidden = true;
   } catch (err) {
-    showBanner("Couldn't load: " + (err.message || err));
+    if (isLatest()) showBanner("Couldn't load: " + (err.message || err));
   }
 }
 
-async function refreshRoom() {
+async function refreshRoom(isLatest) {
   const [latestRes, day, rows] = await Promise.all([
     db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
       .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
@@ -413,7 +420,7 @@ async function refreshRoom() {
     state.range === "24h" ? null : bucketed(state.range),
   ]);
   if (latestRes.error) throw latestRes.error;
-  if (state.view !== "rooms") return;  // the tab changed while this was loading
+  if (!isLatest()) return;  // the tab or the room changed while this was loading
   $("room-title").textContent = state.names[state.device];
   renderRows(latestRes.data[0], day);
   state.rows = rows || day;
@@ -662,7 +669,7 @@ const PAPER_RGB = [230, 229, 220], INK_RGB = [22, 20, 15];
 
 const editor = {
   font: "hand", tool: "pen",
-  strokes: [], stroke: null,                 // freehand: [{ erase, pts: [[x, y], ...] }]
+  strokes: [], stroke: null, pointer: null,  // freehand: [{ erase, pts: [[x, y], ...] }], and the finger drawing now
   text: new Uint8Array(MSG_W * MSG_H),       // typed text and signature, 1 = black
   draw: new Uint8Array(MSG_W * MSG_H),       // freehand
   fits: true, opened: false, sending: false,
@@ -680,9 +687,17 @@ function signature() {
   return name ? `${name} · ${time}` : time;
 }
 
-// Breaks the text into lines no wider than maxWidth with the font already set on the context
+// What a reader sees as one character: an emoji, a flag or an accented letter can be several code units
+function characters(text) {
+  if (window.Intl && Intl.Segmenter) return Array.from(new Intl.Segmenter().segment(text), (part) => part.segment);
+  return Array.from(text);
+}
+
+// Breaks the text into lines no wider than maxWidth with the font already set on the context.
+// lines.cut says whether a word had to be split because it is wider than the screen on its own.
 function wrapText(ctx, text, maxWidth) {
   const lines = [];
+  lines.cut = false;
   for (const paragraph of text.split("\n")) {
     let line = "";
     for (let word of paragraph.split(/\s+/).filter(Boolean)) {
@@ -690,13 +705,15 @@ function wrapText(ctx, text, maxWidth) {
       if (ctx.measureText(candidate).width <= maxWidth) { line = candidate; continue; }
       if (line) lines.push(line);
       // A single word wider than the screen is cut where it stops fitting
-      while (ctx.measureText(word).width > maxWidth && word.length > 1) {
-        let n = word.length - 1;
-        while (n > 1 && ctx.measureText(word.slice(0, n)).width > maxWidth) n--;
-        lines.push(word.slice(0, n));
-        word = word.slice(n);
+      let chars = characters(word);
+      while (chars.length > 1 && ctx.measureText(chars.join("")).width > maxWidth) {
+        let n = chars.length - 1;
+        while (n > 1 && ctx.measureText(chars.slice(0, n).join("")).width > maxWidth) n--;
+        lines.push(chars.slice(0, n).join(""));
+        lines.cut = true;
+        chars = chars.slice(n);
       }
-      line = word;
+      line = chars.join("");
     }
     lines.push(line);
   }
@@ -720,7 +737,7 @@ function renderText() {
       ctx.font = `700 ${size}px ${f.family}`;
       lines = wrapText(ctx, text, MSG_W - 2 * MSG_MARGIN);
       editor.fits = MSG_TEXT_TOP + size * (f.ascent + (lines.length - 1) * f.line + f.descent) <= MSG_TEXT_BOTTOM;
-      if (editor.fits) break;
+      if (editor.fits && !lines.cut) break;  // a smaller size may hold the long word whole
     }
     lines.forEach((line, i) => ctx.fillText(line, MSG_MARGIN, Math.round(MSG_TEXT_TOP + size * (f.ascent + i * f.line))));
     if (!editor.fits) ctx.clearRect(0, MSG_TEXT_BOTTOM, MSG_W, MSG_H - MSG_TEXT_BOTTOM);  // keep the signature readable
@@ -824,8 +841,9 @@ function initEditor() {
     return [clamp((e.clientX - box.left) * MSG_W / box.width, MSG_W - 1), clamp((e.clientY - box.top) * MSG_H / box.height, MSG_H - 1)];
   };
   canvas.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || editor.stroke || editor.sending) return;
     e.preventDefault();
+    editor.pointer = e.pointerId;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* the stroke still works while the pointer stays on the canvas */ }
     const p = point(e);
     editor.stroke = { erase: editor.tool === "erase", pts: [p] };
@@ -834,7 +852,7 @@ function initEditor() {
     paintEditor();
   });
   canvas.addEventListener("pointermove", (e) => {
-    if (!editor.stroke) return;
+    if (!editor.stroke || e.pointerId !== editor.pointer) return;
     const p = point(e);
     const last = editor.stroke.pts[editor.stroke.pts.length - 1];
     if (p[0] === last[0] && p[1] === last[1]) return;
@@ -842,7 +860,7 @@ function initEditor() {
     strokeSegment(last, p, editor.stroke.erase);
     paintEditor();
   });
-  const endStroke = () => { editor.stroke = null; };
+  const endStroke = (e) => { if (e.pointerId === editor.pointer) editor.stroke = null; };
   canvas.addEventListener("pointerup", endStroke);
   canvas.addEventListener("pointercancel", endStroke);
 
@@ -872,7 +890,7 @@ function initEditor() {
     if (!btn) return;
     btn.disabled = true;
     const { error } = await db.rpc("clear_message", { p_id: Number(btn.dataset.clear) });
-    if (error) showBanner("Couldn't remove the message: " + error.message);
+    if (error) setMessageStatus("Couldn't remove the message: " + error.message, true);
     refresh();
   });
   // The signature carries the time, so the preview follows the clock
@@ -894,6 +912,7 @@ function openEditor() {
     // Canvas text falls back to another font until these two have loaded
     Promise.all([document.fonts.load("700 30px Caveat"), document.fonts.load('700 30px "Familjen Grotesk"'), document.fonts.load("8px Tiny5")])
       .then(renderText, renderText);
+    document.fonts.addEventListener("loadingdone", () => { if (state.view === "message" && !editor.sending) renderText(); });
   }
   renderText();
 }
@@ -902,19 +921,20 @@ async function sendMessage() {
   if (editor.sending) return;
   if (!$("msg-text").value.trim() && !editor.draw.includes(1)) return setMessageStatus("Write or draw something first.", true);
   editor.sending = true;
-  $("msg-send").disabled = true;
+  editor.stroke = null;
+  $("msg-send").disabled = $("msg-text").disabled = true;  // what is typed now would be wiped after sending
   setMessageStatus("Sending…");
   renderText();  // the signature gets the time of sending
   const { error } = await db.from("messages").insert({ bitmap: packMessage() });
   editor.sending = false;
-  $("msg-send").disabled = false;
+  $("msg-send").disabled = $("msg-text").disabled = false;
   if (error) return setMessageStatus("Not sent: " + error.message, true);
   clearEditor();
   setMessageStatus("Sent. It shows on the Hub the next time it wakes.");
   refresh();
 }
 
-async function refreshMessages() {
+async function refreshMessages(isLatest) {
   const { data, error } = await db.from("messages").select("id, created_at, author_email, read_at, cleared_at")
     .order("id", { ascending: false }).limit(6);
   if (error) throw error;
@@ -924,7 +944,7 @@ async function refreshMessages() {
     if (res.error) throw res.error;
     for (const m of res.data) editor.bitmaps.set(m.id, m.bitmap);
   }
-  if (state.view !== "message") return;
+  if (!isLatest()) return;
 
   // The Hub shows the newest message only, and only until it is removed
   const hubSeen = state.devices.filter((d) => d.kind === "hub" && has(d.last_seen_at)).map((d) => new Date(d.last_seen_at).getTime());
