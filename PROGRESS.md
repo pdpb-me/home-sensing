@@ -17,6 +17,7 @@ Phases 0, 1 and 2 are closed with Pedro's ok. Phase 3 meets its exit criterion; 
 - Phase 3: migrations `hub_node`, `weather_timer`, `backend_hardening` applied; edge function `sync` version 4; weather fetched by the database every 15 minutes. Both endpoints tested, reviewer pass done and its findings fixed.
 - Phase 4: `firmware/node` (version `node 0.2`) on the C6. Verified: SCD41 single shot, upload with ages, quick Wi-Fi reconnect (about 200 ms), real deep sleep (rows about 298 s apart while the USB port was gone between wakes). Exit criterion met: 22 rows from 16:54 to 18:38, every gap between 295 and 301 s, none missing. Reviewer pass done and fixed.
 - Phase 5 (partly): `firmware/hub` (version `hub 0.4`) online. Verified: SHT41 before Wi-Fi, one sync call, redraw only on change, timer wake from deep sleep (rows about 306 s apart, two hours without a gap), battery reading. Pedro looked at the panel at about 18:50 and said the live values and the weather look right (his word, no photo); the Hub was asleep at the time, so the panel keeps its image with the display rail off. Reviewer pass done and fixed. Weather icons per WMO code.
+- Phase 5, message path (2026-11-15, about 19:00, Pedro at the bench): test message inserted with his ok (`messages` id 9, author `bench-test`, the Phase 2 sample drawing). The Hub fetched it at its next timer wake (19:00:18) and Pedro saw it on the panel. Key wake from deep sleep: off-schedule sync rows at 18:54:52, 18:55:11 and 19:04:52, each a key press Pedro confirmed. After the 19:04:52 press the weather showed and the message came back on its own; `read_at` was set at 19:04:52 by that same sync. The return to the message does not sync (no row a minute later). Still to do: clear the test message and see the Hub go back to the room values.
 - Device keys for `bedroom` and `living` generated with `tools/set_device_key.js`; only their hashes are on Supabase.
 
 ## What is on the boards now
@@ -25,8 +26,6 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 
 ## Not exercised yet (needs Pedro at the bench)
 
-- Hub: waking by a key from deep sleep, the 60-second weather view and return to the main view, "seen".
-- Hub: the message path end to end. No message exists on the server; inserting one is a change to Supabase data, left for Pedro (or for the web app in Phase 6).
 - Sleep current of both boards. The Hub now holds GPIO43 and GPIO39 low in sleep.
 
 ## Decisions waiting for Pedro
@@ -58,4 +57,4 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 
 ## Next step
 
-With Pedro: press a key (weather for 60 s, then back), send a first message, then decide the points above. After that Phase 6 (web app: message editor, device status, second room).
+With Pedro: clear the test message (id 9) and watch the Hub return to the room values, then decide the points above. After that Phase 6 (web app: message editor, device status, second room).
