@@ -144,6 +144,10 @@ static void drawRoom(uint8_t col, const char* label, const RoomReading& r, bool 
   }
   snprintf(buf, sizeof(buf), "%.1f°", r.tempC);
   int16_t pen = drawText(FONT_VALUE, buf, x, VALUE_BASE) + 2;
+  if (isnan(r.humidity)) {  // a reading that came without humidity
+    drawText(FONT_PERCENT, "--%", pen, VALUE_BASE);
+    return;
+  }
   // Whole percent, capped at 99 so the widest row still fits its column
   const long humidity = constrain(lroundf(r.humidity), 0L, 99L);
   snprintf(buf, sizeof(buf), "%ld%%", humidity);

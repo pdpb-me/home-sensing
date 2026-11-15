@@ -23,6 +23,8 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <esp_sleep.h>
+#include <driver/gpio.h>
+#include <driver/rtc_io.h>
 #include <time.h>
 #include <mbedtls/base64.h>
 #include <Seeed_GFX.h>
@@ -32,7 +34,7 @@
 #include "panel/Panel_EPaper.h"
 #include "secrets.h"
 
-#define FW_VERSION "hub 0.3"
+#define FW_VERSION "hub 0.4"
 #ifndef SLEEP_ON_USB
 #define SLEEP_ON_USB 0
 #endif
@@ -43,6 +45,7 @@ Seeed_GFX display;
 // ---------- Settings ----------
 const uint32_t DEFAULT_SLEEP_S = 300;     // when the server can't be reached or doesn't say
 const uint32_t MIN_SLEEP_S = 60, MAX_SLEEP_S = 3600;
+const uint8_t MAX_BACKOFF = 3;            // while the server can't be reached the interval doubles this many times (40 min)
 const uint32_t WEATHER_PEEK_S = 60;       // how long the weather stays after a key press
 const float BATTERY_LOW_V = 3.50f;        // the low-battery band comes on below this...
 const float BATTERY_OK_V = 3.65f;         // ...and goes off above this
@@ -86,6 +89,9 @@ RTC_DATA_ATTR bool batteryLow = false;
 RTC_DATA_ATTR bool weatherPeek = false;     // showing the weather after a key press
 RTC_DATA_ATTR float shownT = NAN, shownH = NAN;
 RTC_DATA_ATTR uint32_t shownSignature = 0;  // what is on the panel now
+RTC_DATA_ATTR int32_t shownMessageId = -1;  // the message on the panel now, -1 when it shows the weather
+RTC_DATA_ATTR int32_t seenMessageId = -1;   // a "seen" still to be reported to the server
+RTC_DATA_ATTR uint8_t syncFailures = 0;     // syncs failed in a row
 RTC_DATA_ATTR uint32_t nextSyncS = 0;
 RTC_DATA_ATTR uint32_t lastAwakeMs = 0;
 RTC_DATA_ATTR uint32_t wakes = 0;
@@ -112,7 +118,7 @@ uint32_t nowSeconds() {
 void powerRail(bool on) {
   pinMode(PIN_PANEL_POWER, OUTPUT);
   digitalWrite(PIN_PANEL_POWER, on ? HIGH : LOW);
-  if (on) delay(3);  // SHT41 power-up time is 1 ms
+  if (on) delay(10);  // the SHT41 needs 1 ms after power-up; the rail itself needs a moment too
 }
 
 // High-precision measurement; false if the sensor doesn't answer or a checksum is wrong
@@ -163,14 +169,16 @@ void loadMessage() {
 void storeMessage(int32_t id) {
   Preferences prefs;
   prefs.begin("hub", false);
+  bool ok = true;
   if (id >= 0) {
-    prefs.putBytes("bmp", messageBits, MESSAGE_BYTES);
-    prefs.putInt("msg", id);
+    ok = prefs.putBytes("bmp", messageBits, MESSAGE_BYTES) == MESSAGE_BYTES && prefs.putInt("msg", id) > 0;
+    if (!ok) prefs.remove("msg");
   } else {
     prefs.remove("msg");
   }
   prefs.end();
-  messageId = id;
+  // If the flash write failed the Hub claims no message, so the server sends the bitmap again next time
+  messageId = ok ? id : -1;
 }
 
 // ---------- Wi-Fi ----------
@@ -205,6 +213,8 @@ bool connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     if (!waitForWiFi(WIFI_FULL_MS)) {
       Serial.printf("  Wi-Fi failed after %u ms\n", (unsigned)(millis() - startedMs));
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
       return false;
     }
     syncsSinceDhcp = 0;
@@ -276,7 +286,7 @@ void appendNumber(String& s, const char* key, float v, unsigned decimals) {
 }
 
 // One call: sends the Hub's reading, gets everything it needs to draw. Returns the seconds to sleep, or 0 on failure.
-uint32_t sync(float tempC, float humidity, float batteryV, bool keyPressed) {
+uint32_t sync(float tempC, float humidity, float batteryV) {
   if (!connectWiFi()) return 0;
 
   String body = "{\"id\":\"" DEVICE_ID "\",\"key\":\"" DEVICE_KEY "\",\"fw\":\"" FW_VERSION "\"";
@@ -290,10 +300,10 @@ uint32_t sync(float tempC, float humidity, float batteryV, bool keyPressed) {
   if (messageId >= 0) {
     body += ",\"have\":";
     body += messageId;
-    if (keyPressed) {  // a key pressed while a message is the main view counts as "seen"
-      body += ",\"seen\":";
-      body += messageId;
-    }
+  }
+  if (seenMessageId >= 0) {
+    body += ",\"seen\":";
+    body += seenMessageId;
   }
   body += "}";
 
@@ -316,6 +326,7 @@ uint32_t sync(float tempC, float humidity, float batteryV, bool keyPressed) {
     return 0;
   }
   Serial.printf("  sync ok in %u ms, %u bytes\n", (unsigned)(millis() - startedMs), (unsigned)answer.length());
+  seenMessageId = -1;  // reported
 
   server.valid = true;
   server.receivedS = nowSeconds();
@@ -364,7 +375,7 @@ ScreenState composeScreen(bool sensorOk, uint32_t now) {
 
   s.bedroomKnown = server.valid && server.roomKnown && !isnan(server.roomCo2) && !isnan(server.roomT);
   if (s.bedroomKnown) {
-    s.bedroom = {server.roomT, isnan(server.roomH) ? 0 : server.roomH};
+    s.bedroom = {server.roomT, server.roomH};  // humidity may be missing: drawn as --%
     s.co2Ppm = server.roomCo2;
     s.bedroomAgeMin = (uint16_t)min<uint32_t>((server.roomAgeS + (now - server.receivedS)) / 60, 65000);
   }
@@ -387,22 +398,32 @@ ScreenState composeScreen(bool sensorOk, uint32_t now) {
 
 // A number that changes exactly when the picture would: everything that is drawn, at the precision it is drawn
 uint32_t screenSignature(const ScreenState& s) {
+  const auto tenths = [](float v) { return isnan(v) ? INT32_MIN : (int32_t)lroundf(v * 10); };
+  const auto whole = [](float v) { return isnan(v) ? INT32_MIN : (int32_t)lroundf(v); };
+  // The number in the stale label: hours up to 47, then days (see ageLabel() in screen.h)
+  const int32_t staleHours = (s.bedroomAgeMin + 30) / 60;
+  const int32_t ageShown = !s.bedroomKnown || s.bedroomAgeMin <= STALE_MINUTES ? 0
+                           : staleHours < 48 ? staleHours : 1000 + min<int32_t>(99, (staleHours + 12) / 24);
+  const bool weatherDrawn = !s.showMessage;  // behind a message the weather isn't visible, so it mustn't cause a redraw
   int32_t parts[] = {
-    s.livingKnown, (int32_t)lroundf(s.living.tempC * 10), (int32_t)lroundf(s.living.humidity),
-    s.bedroomKnown, (int32_t)lroundf(s.bedroom.tempC * 10), (int32_t)lroundf(s.bedroom.humidity), (int32_t)lroundf(s.co2Ppm),
-    s.bedroomAgeMin > STALE_MINUTES ? (s.bedroomAgeMin + 30) / 60 : 0,
+    s.livingKnown, tenths(s.living.tempC), whole(s.living.humidity),
+    s.bedroomKnown, tenths(s.bedroom.tempC), whole(s.bedroom.humidity), whole(s.co2Ppm), ageShown,
     s.co2Alarm, s.showMessage, s.showMessage ? messageId : -1,
-    s.weatherKnown, (int32_t)lroundf(s.outsideNowC), (int32_t)lroundf(s.outsideMaxC), s.rainPercent, s.weatherCode,
+    weatherDrawn && s.weatherKnown, weatherDrawn && s.weatherKnown ? whole(s.outsideNowC) : 0,
+    weatherDrawn && s.weatherKnown ? whole(s.outsideMaxC) : 0, weatherDrawn && s.weatherKnown ? s.rainPercent : 0,
+    weatherDrawn && s.weatherKnown ? (int32_t)weatherIconFor(s.weatherCode) : -1,
     s.batteryLow,
   };
   uint32_t hash = 2166136261u;
   const uint8_t* bytes = (const uint8_t*)parts;
   for (size_t i = 0; i < sizeof(parts); i++) hash = (hash ^ bytes[i]) * 16777619u;
-  for (const char* p = s.place; *p; p++) hash = (hash ^ (uint8_t)*p) * 16777619u;
+  if (weatherDrawn) {
+    for (const char* p = s.place; *p; p++) hash = (hash ^ (uint8_t)*p) * 16777619u;
+  }
   return hash ? hash : 1;  // 0 means "nothing drawn yet"
 }
 
-void showScreen(const ScreenState& s) {
+bool showScreen(const ScreenState& s) {
   uint32_t startedMs = millis();
   if (!displayReady) {
     // Seeed_GFX2 sets the reset pin up with gpio_set_direction() but pulses it with digitalWrite(), and the
@@ -412,7 +433,7 @@ void showScreen(const ScreenState& s) {
     digitalWrite(PIN_PANEL_RESET, HIGH);
     if (!display.begin<Board_XIAO_ePaper_EE05, Config_Seeed_ePaper_2inch13_BW_SSD1680>()) {
       Serial.printf("  display failed: %s\n", display.lastResult().message);
-      return;
+      return false;
     }
     display.setRotation(3);  // 250x122, long edge horizontal
     displayReady = true;
@@ -420,6 +441,7 @@ void showScreen(const ScreenState& s) {
   drawScreen(s, s.showMessage ? messageBits : nullptr);
   display.update();
   Serial.printf("  screen redrawn in %u ms (%s)\n", (unsigned)(millis() - startedMs), s.showMessage ? "message" : "weather");
+  return true;
 }
 
 // ---------- Main ----------
@@ -434,7 +456,11 @@ uint32_t runCycle(Wake wake) {
   powerRail(true);
   Wire.begin(PIN_SDA, PIN_SCL);
   float t = NAN, h = NAN;
-  const bool sensorOk = readSht41(t, h);
+  bool sensorOk = readSht41(t, h);
+  if (!sensorOk) {  // straight after the rail comes up the first try can be too early
+    delay(20);
+    sensorOk = readSht41(t, h);
+  }
   const float batteryV = readBatteryVolts();
   if (sensorOk) {
     if (isnan(shownT) || fabsf(t - shownT) >= TEMP_STEP_C) shownT = t;
@@ -444,23 +470,36 @@ uint32_t runCycle(Wake wake) {
   else if (batteryV > BATTERY_OK_V) batteryLow = false;
   Serial.printf("  living room %.2f C %.1f %%%s, battery %.2f V\n", t, h, sensorOk ? "" : " (SHT41 did not answer)", batteryV);
 
+  // A key pressed while a message is on the panel means it has been seen. It is reported with the next
+  // sync that works, so a failed call doesn't lose it.
+  if (wake == WAKE_KEY && shownMessageId >= 0) seenMessageId = shownMessageId;
+
   // A timer wake that only ends the weather peek doesn't need the server
   const bool peekEnds = weatherPeek && wake == WAKE_TIMER;
   if (peekEnds) weatherPeek = false;
   if (!peekEnds || !server.valid || now >= nextSyncS) {
-    if (messageId >= 0 && wake != WAKE_TIMER) loadMessage();  // RTC memory may be gone after a reset
-    const uint32_t sleepS = sync(t, h, batteryV, wake == WAKE_KEY);
-    nextSyncS = nowSeconds() + (sleepS ? sleepS : DEFAULT_SLEEP_S);
+    const uint32_t sleepS = sync(t, h, batteryV);
+    if (sleepS) {
+      syncFailures = 0;
+      nextSyncS = nowSeconds() + sleepS;
+    } else {
+      // Server or Wi-Fi down: each failure costs seconds of radio, so try less and less often
+      nextSyncS = nowSeconds() + min<uint32_t>(DEFAULT_SLEEP_S << min<uint8_t>(syncFailures, MAX_BACKOFF), MAX_SLEEP_S);
+      if (syncFailures < 255) syncFailures++;
+    }
   }
   if (wake == WAKE_KEY && messageId >= 0) weatherPeek = true;  // with no message the weather is the main view anyway
 
+  // The bitmap has to be in memory before deciding what the screen shows: if it can't be read back,
+  // the Hub forgets it (the server then sends it again) and shows the weather meanwhile
+  if (messageId >= 0 && !weatherPeek) loadMessage();
   ScreenState screen = composeScreen(sensorOk, nowSeconds());
   const uint32_t signature = screenSignature(screen);
   if (signature != shownSignature) {
-    if (screen.showMessage) loadMessage();
-    screen.showMessage = messageId >= 0 && !weatherPeek;
-    showScreen(screen);
-    shownSignature = signature;
+    if (showScreen(screen)) {
+      shownSignature = signature;
+      shownMessageId = screen.showMessage ? messageId : -1;
+    }
   } else {
     Serial.println("  nothing changed on screen");
   }
@@ -474,8 +513,20 @@ uint32_t runCycle(Wake wake) {
 
 void sleepFor(uint32_t seconds) {
   powerRail(false);  // display and SHT41 off
+  pinMode(PIN_BATTERY_ENABLE, OUTPUT);
+  digitalWrite(PIN_BATTERY_ENABLE, LOW);
+  // Keep both switches off through the sleep instead of leaving the pins floating
+  gpio_hold_en((gpio_num_t)PIN_PANEL_POWER);
+  gpio_hold_en((gpio_num_t)PIN_BATTERY_ENABLE);
+  gpio_deep_sleep_hold_en();
+
   esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
-  esp_sleep_enable_ext1_wakeup_io(KEY_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  // The key wake-up is level-triggered: a key that is still down (held, or jammed by the case) would
+  // wake the Hub again at once, over and over. In that case this sleep ends by timer only.
+  bool keyDown = false;
+  for (int pin : PIN_KEYS) keyDown = keyDown || digitalRead(pin) == LOW;
+  if (!keyDown) esp_sleep_enable_ext1_wakeup_io(KEY_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  else Serial.println("  a key is down: sleeping without the key wake-up");
   esp_deep_sleep_start();
 }
 
@@ -484,7 +535,14 @@ uint32_t sleepSeconds = DEFAULT_SLEEP_S;
 void setup() {
   setCpuFrequencyMhz(80);  // plenty for this job
   Serial.begin(115200);
-  for (int pin : PIN_KEYS) pinMode(pin, INPUT);
+  // Undo what the last sleep left behind: the held switches, and the key pins in their wake-up role
+  gpio_deep_sleep_hold_dis();
+  gpio_hold_dis((gpio_num_t)PIN_PANEL_POWER);
+  gpio_hold_dis((gpio_num_t)PIN_BATTERY_ENABLE);
+  for (int pin : PIN_KEYS) {
+    rtc_gpio_deinit((gpio_num_t)pin);
+    pinMode(pin, INPUT);
+  }
 
   Wake wake = WAKE_POWER;
   if (esp_reset_reason() == ESP_RST_DEEPSLEEP) {
@@ -495,6 +553,8 @@ void setup() {
     co2Alarm = batteryLow = weatherPeek = false;
     shownT = shownH = NAN;
     shownSignature = 0;
+    shownMessageId = seenMessageId = -1;
+    syncFailures = 0;
     nextSyncS = 0;
     apKnown = false;
     wakes = 0;
@@ -532,7 +592,9 @@ void loop() {
     if (pressed) {
       delay(30);  // contact bounce
       wake = WAKE_KEY;
-      while (digitalRead(PIN_KEYS[0]) == LOW || digitalRead(PIN_KEYS[1]) == LOW || digitalRead(PIN_KEYS[2]) == LOW) delay(10);
+      const uint32_t pressedMs = millis();
+      while (millis() - pressedMs < 3000 &&
+             (digitalRead(PIN_KEYS[0]) == LOW || digitalRead(PIN_KEYS[1]) == LOW || digitalRead(PIN_KEYS[2]) == LOW)) delay(10);
       break;
     }
     delay(20);
