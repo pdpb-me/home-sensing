@@ -4,7 +4,7 @@ Updated: 2026-11-15 · Working branch: `hub-node`
 
 ## Current phase
 
-**Phase 3 · Backend**: applied and working except the weather. Blocked on a decision from Pedro about where the weather comes from (see below).
+**Phase 3 · Backend**: applied, tested and working, weather included. Waiting for Pedro to close it.
 
 Phases 0, 1 and 2 are closed with Pedro's ok (2026-11-15).
 
@@ -14,15 +14,11 @@ Phases 0, 1 and 2 are closed with Pedro's ok (2026-11-15).
 - Phase 1: Hub hardware proven with `firmware/hub_check` (SHT41, display, keys, battery pins). Found and worked around the Seeed_GFX2 reset-pin bug.
 - Phase 2: `firmware/hub` draws every screen state with made-up data; Pedro judged the panel readable from photos ("fine for now"). Eight states step one per key press. Reviewer findings fixed: font licence file, humidity capped at 99 %, word decided on the printed value, keys read by their own task.
 - `tools/hub_screen`: PC simulator of the screen and generator of `fonts.h` / `art.h` (`npm install`, then `node screens.js`, `node export.js`).
-- Phase 3: migration `hub_node` applied, edge function `sync` deployed (version 2), both endpoints tested with temporary devices that were removed afterwards. Details in `CLAUDE.md`.
+- Phase 3: migrations `hub_node` and `weather_timer` applied, edge function `sync` deployed (version 3). Both device endpoints tested with temporary devices that were removed afterwards. Details in `CLAUDE.md`.
 
-## Blocked: weather source
+## Weather source (decided 2026-11-15)
 
-Open-Meteo refuses requests coming from Supabase edge functions (HTTP 429, shared outgoing IPs). Options put to Pedro:
-
-1. The database fetches Open-Meteo itself every 15 minutes (extensions `pg_cron` + `pg_net`) and `sync` only reads the cache. Not tested: it works only if the database's outgoing IP is not rate-limited too.
-2. Switch to MET Norway (free, no key, wants an identifying User-Agent).
-3. The Hub fetches the weather itself over home Wi-Fi: a second HTTPS call, against the brief.
+Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgoing IPs). Pedro chose the database timer: `pg_cron` + `pg_net` fetch Open-Meteo every 15 minutes into `weather_cache`, and `sync` only reads it. Tested: `sync` returned now 9.4, max 9.5, rain 60 %, code 2.
 
 ## Open points
 
@@ -34,6 +30,7 @@ Open-Meteo refuses requests coming from Supabase edge functions (HTTP 429, share
 - Battery reading not compared with a multimeter (Phase 7). Not exercised: SHT41 losing power when GPIO43 is low, key wake from deep sleep.
 - `supabase/schema.sql` still describes the old schema.
 - Device keys for `bedroom` and `living` are not generated yet (needed in Phases 4 and 5).
+- The Phase 3 SQL and edge function have not been through the reviewer agent yet.
 
 ## Notes
 
@@ -43,10 +40,10 @@ Open-Meteo refuses requests coming from Supabase edge functions (HTTP 429, share
 
 ## Next step
 
-Settle the weather source, re-test `sync` with weather, then ask Pedro to close Phase 3. After that Phase 4 (Node firmware).
+Reviewer pass on the backend, then Phase 4 (Node firmware): single-shot SCD41 every 5 minutes, batch upload through `ingest_node`, deep sleep. Needs a device key for `bedroom` and Wi-Fi credentials in a git-ignored `secrets.h`.
 
 ## Needed from Pedro
 
-- Weather source decision.
+- Ok to close Phase 3.
 - What happens to `entrance`: does it stay, or did its hardware move to the Node?
 - `HANDOFF.md` and `Hardware/` are not in git: should they go in the (public) repo or stay local?

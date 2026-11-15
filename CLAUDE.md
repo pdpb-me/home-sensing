@@ -34,12 +34,12 @@ Devices never talk to each other (no ESP-NOW, no gateway). Each uses home Wi-Fi 
 
 ## Backend facts (verified 2026-11-15)
 
-- Migration `hub_node` (`supabase/migrations/20261115_hub_node.sql`) is applied and edge function `sync` (JWT verification off, own device-key check) is deployed. `supabase/schema.sql` is not updated for it yet.
+- Migrations `hub_node` and `weather_timer` (files in `supabase/migrations/`) are applied and edge function `sync` (version 3, JWT verification off, own device-key check) is deployed. `supabase/schema.sql` is not updated for it yet.
 - Tables: `devices` (now with kind, last_seen_at, battery_v, rssi_dbm, fw_version, awake_ms; `key_hash` is no longer readable through the API), `readings`, `messages`, `hub_settings`, `weather_cache`, `viewers`, `readings_archive`. RLS on everywhere; only `viewers` emails can read.
 - Devices: `entrance` (old node, RPC `ingest` with Unix `ts`), `bedroom` (Node) and `living` (Hub). The last two have `key_hash = 'unset'` and cannot log in until real hashes are stored.
 - Node endpoint: RPC `ingest_node(p_device_id, p_key, p_samples, p_status)` with the publishable key in the `apikey` header; samples carry `age` in seconds. Tested: 3 samples stored, a repeat stored 0, wrong key gives HTTP 403.
 - Hub endpoint: `POST /functions/v1/sync`, request and response documented at the top of `supabase/functions/sync/index.ts`. Tested: bedroom reading with age, message id, bitmap only when the Hub's `have` differs, `seen` sets `read_at`, wrong key gives 401. About 0.25 s warm, 1.4 s cold.
-- **Weather does not work yet:** Open-Meteo answers HTTP 429 "Daily API request limit exceeded" to requests from Supabase edge functions, because they share outgoing IP addresses with other projects. `sync` then returns null weather fields.
+- Weather: Open-Meteo answers HTTP 429 "Daily API request limit exceeded" to Supabase edge functions (they share outgoing IP addresses with other projects), so, with Pedro's ok, the database fetches it instead (`supabase/migrations/20261115_weather_timer.sql`): `pg_cron` runs `weather_request()` every 15 minutes and `weather_store()` a minute later, through `pg_net`, into the one row of `weather_cache`. `sync` only reads that row and returns null weather when it is older than `hub_settings.weather_max_age_s` (3 h). A failed refresh leaves its reason in `weather_cache.last_error`. Do not move the fetch back into an edge function.
 - The project uses the new `sb_publishable_...` key (not a JWT): send it in `apikey`, never in `Authorization: Bearer`.
 
 ## Hub hardware facts (2026-11-15)

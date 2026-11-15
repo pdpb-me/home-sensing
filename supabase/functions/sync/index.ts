@@ -4,6 +4,10 @@
 // device key, which hub_sync() checks against the hash in `devices`. This function holds the project's
 // secret key (from its environment, never in the repo) and is the only caller of hub_sync().
 //
+// The weather is not fetched here: Open-Meteo rejects requests from edge functions (shared, rate-limited
+// addresses). The database fetches it every 15 minutes (see the weather_timer migration) and this
+// function passes on what is stored.
+//
 // Request (POST, JSON):
 //   { "id": "living", "key": "<device key>",
 //     "t": 21.4, "h": 48.1, "bv": 3.95, "rssi": -58, "fw": "hub 0.3", "ms": 3120,   // all optional
@@ -13,11 +17,9 @@
 // Response, kept flat and short so the firmware can parse it cheaply:
 //   { "t": 19.8, "h": 55, "c": 870, "age": 240,          // bedroom; all null when there is no reading yet
 //     "msg": 12, "bmp": "<base64, 3928 chars>",           // bmp only when msg differs from "have"; msg null = none
-//     "wn": 9.4, "wx": 9.5, "wr": 60, "wc": 2,            // outside now, today's max, rain %, WMO code; null if unknown
+//     "wn": 9.4, "wx": 9.5, "wr": 60, "wc": 2,            // outside now, today's max, rain %, WMO code; null if unknown or too old
 //     "place": "MILANO", "sleep": 300 }                   // seconds to sleep before the next sync
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const WEATHER_TIMEOUT_MS = 4000;
 
 function secretKey(): string {
   const named = Deno.env.get("SUPABASE_SECRET_KEYS");
@@ -37,35 +39,10 @@ const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : n
 const int = (v: unknown) => (typeof v === "number" && Number.isInteger(v) ? v : null);
 
 type Settings = {
-  place_name: string; latitude: number; longitude: number; timezone: string;
+  place_name: string; timezone: string;
   day_starts: string; night_starts: string; day_sleep_s: number; night_sleep_s: number; weather_max_age_s: number;
 };
-type Weather = { fetched_at: string; now_c: number | null; max_c: number | null; rain_pct: number | null; weather_code: number | null };
-
-async function fetchWeather(cfg: Settings): Promise<Weather | null> {
-  const url = "https://api.open-meteo.com/v1/forecast" +
-    `?latitude=${cfg.latitude}&longitude=${cfg.longitude}` +
-    "&current=temperature_2m,weather_code&daily=temperature_2m_max,precipitation_probability_max" +
-    `&timezone=${encodeURIComponent(cfg.timezone)}&forecast_days=1`;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(WEATHER_TIMEOUT_MS) });
-    if (!res.ok) {
-      console.error("weather fetch failed: HTTP", res.status, (await res.text()).slice(0, 200));
-      return null;
-    }
-    const w = await res.json();
-    return {
-      fetched_at: new Date().toISOString(),
-      now_c: num(w.current?.temperature_2m),
-      max_c: num(w.daily?.temperature_2m_max?.[0]),
-      rain_pct: num(w.daily?.precipitation_probability_max?.[0]),
-      weather_code: num(w.current?.weather_code),
-    };
-  } catch (e) {
-    console.error("weather fetch failed:", e instanceof Error ? e.message : String(e));
-    return null;  // slow or down: the Hub gets the last known weather, or none
-  }
-}
+type Weather = { fetched_at: string | null; now_c: number | null; max_c: number | null; rain_pct: number | null; weather_code: number | null };
 
 // "HH:MM:SS" -> minutes since midnight
 const minutes = (hms: string) => Number(hms.slice(0, 2)) * 60 + Number(hms.slice(3, 5));
@@ -106,16 +83,10 @@ Deno.serve(async (req) => {
   }
 
   const cfg = data.settings as Settings;
-  let weather = data.weather as Weather | null;
-  const stale = !weather || Date.now() - Date.parse(weather.fetched_at) > cfg.weather_max_age_s * 1000;
-  if (stale) {
-    const fresh = await fetchWeather(cfg);
-    if (fresh) {
-      weather = fresh;
-      const { error: cacheError } = await db.from("weather_cache").upsert({ id: 1, ...fresh });
-      if (cacheError) console.error("weather cache write failed:", cacheError.message);
-    }
-  }
+  const stored = data.weather as Weather | null;
+  // Yesterday's weather shown as "now" would be worse than none
+  const fresh = stored?.fetched_at && Date.now() - Date.parse(stored.fetched_at) <= cfg.weather_max_age_s * 1000;
+  const weather = fresh ? stored : null;
 
   const room = data.room as { t: number | null; h: number | null; c: number | null; age: number } | null;
   return json({
