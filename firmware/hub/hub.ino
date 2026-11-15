@@ -34,7 +34,7 @@
 #include "panel/Panel_EPaper.h"
 #include "secrets.h"
 
-#define FW_VERSION "hub 0.4"
+#define FW_VERSION "hub 0.5"
 #ifndef SLEEP_ON_USB
 #define SLEEP_ON_USB 0
 #endif
@@ -474,8 +474,9 @@ uint32_t runCycle(Wake wake) {
   // sync that works, so a failed call doesn't lose it.
   if (wake == WAKE_KEY && shownMessageId >= 0) seenMessageId = shownMessageId;
 
-  // A timer wake that only ends the weather peek doesn't need the server
-  const bool peekEnds = weatherPeek && wake == WAKE_TIMER;
+  // The weather peek ends by itself after WEATHER_PEEK_S, or at once with a second key press.
+  // Either way the wake only puts the message back, which doesn't need the server.
+  const bool peekEnds = weatherPeek && (wake == WAKE_TIMER || wake == WAKE_KEY);
   if (peekEnds) weatherPeek = false;
   if (!peekEnds || !server.valid || now >= nextSyncS) {
     const uint32_t sleepS = sync(t, h, batteryV);
@@ -488,7 +489,8 @@ uint32_t runCycle(Wake wake) {
       if (syncFailures < 255) syncFailures++;
     }
   }
-  if (wake == WAKE_KEY && messageId >= 0) weatherPeek = true;  // with no message the weather is the main view anyway
+  // With no message the weather is the main view anyway
+  if (wake == WAKE_KEY && messageId >= 0 && !peekEnds) weatherPeek = true;
 
   // The bitmap has to be in memory before deciding what the screen shows: if it can't be read back,
   // the Hub forgets it (the server then sends it again) and shows the weather meanwhile
