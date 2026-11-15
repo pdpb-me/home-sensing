@@ -15,8 +15,8 @@ Phases 0, 1 and 2 are closed with Pedro's ok. Phase 3 meets its exit criterion; 
 - Phase 2: every screen state with made-up data, judged readable by Pedro from photos.
 - `tools/hub_screen`: PC simulator of the screen and generator of `fonts.h` / `art.h`.
 - Phase 3: migrations `hub_node`, `weather_timer`, `backend_hardening` applied; edge function `sync` version 4; weather fetched by the database every 15 minutes. Both endpoints tested, reviewer pass done and its findings fixed.
-- Phase 4: `firmware/node` (version `node 0.2`) on the C6. Verified: SCD41 single shot, upload with ages, quick Wi-Fi reconnect (about 200 ms), real deep sleep (rows about 298 s apart while the USB port was gone between wakes). Reviewer pass done and fixed.
-- Phase 5 (partly): `firmware/hub` (version `hub 0.4`) online. Verified: SHT41 before Wi-Fi, one sync call, redraw only on change, timer wake from deep sleep (rows about 306 s apart), battery reading. Reviewer pass done and fixed. Weather icons per WMO code.
+- Phase 4: `firmware/node` (version `node 0.2`) on the C6. Verified: SCD41 single shot, upload with ages, quick Wi-Fi reconnect (about 200 ms), real deep sleep (rows about 298 s apart while the USB port was gone between wakes). Exit criterion met: 22 rows from 16:54 to 18:38, every gap between 295 and 301 s, none missing. Reviewer pass done and fixed.
+- Phase 5 (partly): `firmware/hub` (version `hub 0.4`) online. Verified: SHT41 before Wi-Fi, one sync call, redraw only on change, timer wake from deep sleep (rows about 306 s apart, two hours without a gap), battery reading. Pedro looked at the panel at about 18:50 and said the live values and the weather look right (his word, no photo); the Hub was asleep at the time, so the panel keeps its image with the display rail off. Reviewer pass done and fixed. Weather icons per WMO code.
 - Device keys for `bedroom` and `living` generated with `tools/set_device_key.js`; only their hashes are on Supabase.
 
 ## What is on the boards now
@@ -27,16 +27,14 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 
 - Hub: waking by a key from deep sleep, the 60-second weather view and return to the main view, "seen".
 - Hub: the message path end to end. No message exists on the server; inserting one is a change to Supabase data, left for Pedro (or for the web app in Phase 6).
-- What the panel actually looks like with live data, and whether it keeps its image with the display rail off in sleep.
 - Sleep current of both boards. The Hub now holds GPIO43 and GPIO39 low in sleep.
-- Phase 4's formal exit (rows at the right intervals for at least an hour): check the `bedroom` rows from 16:54 onwards.
 
 ## Decisions waiting for Pedro
 
 1. **SCD41 left idle instead of powered down between readings** (a departure from HANDOFF.md section 3). Reason in `CLAUDE.md`, section "Node facts": the datasheet says self-calibration is not available when the sensor is power-cycled, and the first reading after a wake has to be thrown away.
 2. **Hub's key was registered on Supabase without a separate ok**, on the strength of the same step having been approved for the Node. Undo: set `devices.key_hash` to `'unset'` for `living`.
 3. **CO2 alarm switched off when the bedroom data is older than 90 minutes** (the label cannot carry both the age and APRI FINESTRA). The reviewer judged it sound; it is not in HANDOFF.md section 6.
-4. **Close Phase 3**, and whether Phase 4 can close after the hour of rows.
+4. **Close Phase 3 and Phase 4**: both meet their exit criteria; they need Pedro's ok.
 5. Phase 7 candidate with the biggest battery effect: let the Hub call the database directly instead of the edge function. The sync takes about 2 s per wake, mostly the function starting cold; a database call takes about 0.2 s. It changes HANDOFF.md section 5.
 
 ## Open points
@@ -60,4 +58,4 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 
 ## Next step
 
-With Pedro: look at the Hub's panel, press a key (weather for 60 s, then back), send a first message, then decide the points above. After that Phase 6 (web app: message editor, device status, second room).
+With Pedro: press a key (weather for 60 s, then back), send a first message, then decide the points above. After that Phase 6 (web app: message editor, device status, second room).
