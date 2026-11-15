@@ -60,7 +60,7 @@ From the EE05 schematic, not exercised yet:
 
 - GPIO43 (PWR_EN) switches the `VCC_3V3` rail that feeds the panel and that header hole, so the SHT41 should lose power when GPIO43 is low. The library sets it high in `begin()`.
 - Battery divider is 10k/10k behind a load switch; keys have 10k pull-ups to the always-on 3V3 and 100 nF.
-- Expansion header holes (J2/J4). Right row: VBUS, GND, VCC_3V3, GPIO11, GPIO12, GPIO13, NFC. Other row: GPIO5, GPIO6, PWR_EN, EDP_RES, ADC_EN, GPIO40, NFC. Which end is hole 1 is only confirmed for the right row.
+- Expansion header holes (J2/J4). Right row, measured on 2026-11-15 with the Hub asleep and GPIO11's pull-up on (hole 6 read 3.2 V): VBUS, GND, VCC_3V3, GPIO13, GPIO12, **GPIO11**, NFC, so GPIO11 to 13 run the opposite way to the first reading of the schematic. Hole 3 (the switched rail) read 2.44 V in sleep instead of 0: look at it when measuring sleep current. Other row: GPIO5, GPIO6, PWR_EN, EDP_RES, ADC_EN, GPIO40, NFC. Which end is hole 1 is only confirmed for the right row.
 - Key wake from deep sleep works (ext1, any key low): verified on 2026-11-15 with `firmware/hub`, three presses, each followed by a sync row.
 - XIAO S3 Plus numbering (matches the core's variant file): D11 = GPIO38, D12 = GPIO39, D13 = GPIO40, D14 = GPIO41, D15 = GPIO42, D16 = GPIO10.
 

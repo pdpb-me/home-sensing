@@ -59,7 +59,7 @@ const uint32_t TLS_HANDSHAKE_S = 8;       // the default is 120 s of radio on a 
 const int PIN_SDA = 5;
 const int PIN_SCL = 6;
 // Key1, Key2, Key3 on the board (active low, 10k pull-ups there), plus an external push button between
-// GPIO11 (4th hole of the right header row) and GND. It does what the keys do. The header has no
+// GPIO11 (6th hole of the right header row, counted from VBUS) and GND. It does what the keys do. The header has no
 // always-on 3V3 for a pull-up resistor, so GPIO11 uses the chip's own pull-up, awake and asleep.
 const int PIN_EXTERNAL_KEY = 11;
 const int PIN_KEYS[4] = {2, 3, 8, PIN_EXTERNAL_KEY};
