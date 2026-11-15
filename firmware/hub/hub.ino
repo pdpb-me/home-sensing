@@ -516,7 +516,11 @@ void setup() {
 }
 
 void loop() {
-  if (SLEEP_ON_USB || !usbConnected()) sleepFor(sleepSeconds);
+  if (SLEEP_ON_USB || !usbConnected()) {
+    // Test builds that sleep on USB: keep the port up a few seconds so a new sketch can still be uploaded
+    if (SLEEP_ON_USB && usbConnected()) delay(5000);
+    sleepFor(sleepSeconds);
+  }
 
   // On USB: wait out the sleep time awake, watching the keys
   Serial.printf("USB connected: staying awake, next cycle in %u s\n", (unsigned)sleepSeconds);

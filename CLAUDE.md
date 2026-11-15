@@ -64,6 +64,15 @@ From the EE05 schematic, not exercised yet:
 - Key wake from deep sleep is untested.
 - XIAO S3 Plus numbering (matches the core's variant file): D11 = GPIO38, D12 = GPIO39, D13 = GPIO40, D14 = GPIO41, D15 = GPIO42, D16 = GPIO10.
 
+## Node facts (2026-11-15)
+
+- XIAO ESP32-C6 + SCD41 at 0x62 on SDA GPIO20 / SCL GPIO18, verified with `firmware/node_check`. FQBN `esp32:esp32:XIAO_ESP32C6:CDCOnBoot=cdc`. The sketch fills 87 % of the default 1.2 MB app partition.
+- **The SCD41 is left idle between readings, not powered down** (HANDOFF.md section 3 says `power_down`; this is the one deliberate departure, to be confirmed with Pedro). Datasheet v1.5 section 3.10: after a power cycle the first single shot must be discarded, and "for power-cycled single shot operation, ASC is not available", whether the supply is cut or `power_down` is used. Idle with one shot every 5 minutes averages 0.45 mA. Measured with power-down: first shots were up to 66 ppm off the second ones, and the temperature fell back by the factory 4 C offset because altitude and offset live in RAM. Switch: `POWER_DOWN_BETWEEN_READINGS` in `node.ino`.
+- Temperature offset is 0 for now; with it the Node read about 0.4 to 0.8 C above the Hub's SHT41 on the same bench. Calibrate in Phase 7.
+- Reconnecting to Wi-Fi with the remembered channel, access point and address takes about 200 ms (2.3 to 2.5 s from scratch), on both devices.
+- A sync from the Hub takes about 2.3 s on top of that, every time: this is most of its awake time and the first thing to tune.
+- Builds made with `--build-property "compiler.cpp.extra_flags=-DSLEEP_ON_USB=1"` deep-sleep even with a computer attached. The USB serial port then disappears between wakes, so uploading a new sketch means catching a wake (the Hub build waits 5 s before sleeping for this) or holding BOOT while pressing RESET.
+
 ## Toolchain (verified 2026-11-15)
 
 - Arduino IDE 2 with bundled CLI: `%LOCALAPPDATA%\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` (not on PATH).
@@ -77,6 +86,6 @@ From the EE05 schematic, not exercised yet:
 
 - Work on branch `hub-node`. Never push to `main` or change the public site without asking.
 - Ask before: Supabase migrations or data changes, edge function deploys, anything that costs money or creates accounts, deleting files you did not create, erasing a configured board's flash/NVS, wiring that differs from HANDOFF.md, reopening a decision in HANDOFF.md section 9 or the screen spec.
-- Never: secrets in git (`secrets.h` is git-ignored), `service_role` key in firmware or web app. Never print device keys or `key_hash`.
+- Never: secrets in git (`secrets.h` is git-ignored), `service_role` key in firmware or web app. Never print or read out a device key, a Wi-Fi password or the contents of a `secrets.h`. A key's SHA-256 hash may be shown at the moment it is registered (the keys are 256 random bits); don't dump `devices.key_hash` otherwise.
 - The repo is public: no personal data in committed files.
 - Battery first: radio time is the main cost (TLS handshake). Log awake time per cycle.
