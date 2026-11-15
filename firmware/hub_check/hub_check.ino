@@ -1,11 +1,11 @@
 // Hub hardware check: Seeed XIAO ePaper Display Board EE05 (XIAO ESP32-S3 Plus) + 2.13" e-paper + SHT41.
 // Proves the I2C wiring, the SHT41, the display, the three keys and the battery sense pins.
-// Prints a report on Serial every 5 s; pressing a key redraws the display with that key's name.
+// Prints a report on Serial every 5 s; pressing a key redraws the display with the press counts.
 //
 // Board settings: XIAO_ESP32S3, USB CDC On Boot = Enabled, PSRAM = OPI.
 // Library: Seeed_GFX2 (from GitHub, not the Library Manager).
 //
-// Wiring: SHT41 VIN -> 3V3 header hole (switched by GPIO43), GND -> GND, SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
+// Wiring: SHT41 VIN -> 3V3 header hole (VCC_3V3, switched on by the display library through GPIO43), GND -> GND, SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
 
 #include <Wire.h>
 #include <Seeed_GFX.h>
@@ -17,7 +17,7 @@
 const int PIN_SDA = 5;
 const int PIN_SCL = 6;
 const int PIN_KEYS[3] = {2, 3, 8};         // Key1, Key2, Key3: active low, 10k pull-ups on the board
-const int PIN_PANEL_POWER = 43;            // PWR_EN: switches VCC_3V3, which feeds the display and the 3V3 header hole
+const int PIN_PANEL_RESET = 38;            // EDP_RES
 const int PIN_BATTERY = 1;                 // BAT_ADC: VBAT through a 10k/10k divider
 const int PIN_BATTERY_ENABLE = 39;         // ADC_EN, active high: connects the divider to the battery
 const uint8_t SHT41_ADDRESS = 0x44;
@@ -27,14 +27,19 @@ const bool WIRING_TEST = false;
 
 Seeed_GFX display;
 bool displayOk = false;
-bool keyDown[3] = {false, false, false};
 uint32_t lastReportMs = 0;
 
-// The display library may switch the rail off after an update; the SHT41 on the header needs it on
-void powerRailOn() {
-  pinMode(PIN_PANEL_POWER, OUTPUT);
-  digitalWrite(PIN_PANEL_POWER, HIGH);
-  delay(5);  // SHT41 power-up time is 1 ms
+// Presses are counted in interrupts, so none is missed while the display redraws (about 2.3 s)
+volatile uint32_t keyPresses[3] = {0, 0, 0};
+volatile uint32_t keyLastMs[3] = {0, 0, 0};
+uint32_t shownPresses[3] = {0, 0, 0};
+
+void IRAM_ATTR onKey(void* arg) {
+  int i = (int)(intptr_t)arg;
+  uint32_t now = millis();
+  if (now - keyLastMs[i] < 150) return;  // contact bounce
+  keyLastMs[i] = now;
+  keyPresses[i] = keyPresses[i] + 1;
 }
 
 // High-precision measurement; false if the sensor doesn't answer or a checksum is wrong
@@ -98,19 +103,21 @@ void drawScreen(const char* line, float tempC, float humidity, bool shtOk) {
   display.setTextSize(1);
   snprintf(buf, sizeof(buf), "%d x %d", display.width(), display.height());
   display.drawString(buf, 10, 104);
+  uint32_t startedMs = millis();
   display.update();
-  powerRailOn();
+  Serial.printf("Display update \"%s\" took %u ms\n", line, (unsigned)(millis() - startedMs));
 }
 
 void report() {
-  powerRailOn();
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   scanI2c();
   if (shtOk) Serial.printf("SHT41: T=%.2f C  RH=%.1f %%\n", t, h);
   else Serial.println("SHT41: no answer");
   Serial.printf("Battery: %.2f V\n", readBatteryVolts());
-  Serial.printf("Keys: %d %d %d (1 = pressed)   Display: %s\n", keyDown[0], keyDown[1], keyDown[2],
+  Serial.printf("Key presses since boot: %u %u %u   Levels now: %d %d %d (0 = pressed)   Display: %s\n",
+                (unsigned)keyPresses[0], (unsigned)keyPresses[1], (unsigned)keyPresses[2],
+                digitalRead(PIN_KEYS[0]), digitalRead(PIN_KEYS[1]), digitalRead(PIN_KEYS[2]),
                 displayOk ? "ok" : "FAILED");
 }
 
@@ -119,7 +126,6 @@ void setup() {
   delay(1500);
   Serial.println("\nHub check starting");
 
-  for (int pin : PIN_KEYS) pinMode(pin, INPUT);
   pinMode(PIN_BATTERY_ENABLE, OUTPUT);
   digitalWrite(PIN_BATTERY_ENABLE, LOW);
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -128,7 +134,17 @@ void setup() {
   if (displayOk) display.setRotation(3);  // 250x122, long edge horizontal
   else Serial.println(display.lastResult().message);
 
-  powerRailOn();
+  // Seeed_GFX2 sets the reset pin up with gpio_set_direction() but pulses it with digitalWrite(), and the
+  // ESP32 core ignores digitalWrite() on a pin that never went through pinMode(). Without this the panel
+  // is never reset out of deep sleep, so every update after the first one times out (2 x 30 s).
+  pinMode(PIN_PANEL_RESET, OUTPUT);
+  digitalWrite(PIN_PANEL_RESET, HIGH);
+
+  // After the display is set up, in case the library reconfigures pins
+  for (int i = 0; i < 3; i++) {
+    pinMode(PIN_KEYS[i], INPUT);
+    attachInterruptArg(PIN_KEYS[i], onKey, (void*)(intptr_t)i, FALLING);
+  }
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   uint32_t startedMs = millis();
@@ -140,7 +156,6 @@ void setup() {
 void loop() {
   if (WIRING_TEST) {
     Wire.end();
-    powerRailOn();
     pinMode(PIN_SDA, OUTPUT);
     pinMode(PIN_SCL, OUTPUT);
     digitalWrite(PIN_SDA, HIGH);
@@ -149,18 +164,30 @@ void loop() {
     delay(2000);
     return;
   }
+  // Second, independent check: the pin level itself, in case the interrupts don't fire
+  static bool wasDown[3] = {false, false, false};
+  static uint32_t polledPresses[3] = {0, 0, 0};
+  bool changed = false;
   for (int i = 0; i < 3; i++) {
     bool down = digitalRead(PIN_KEYS[i]) == LOW;
-    if (down == keyDown[i]) continue;
-    keyDown[i] = down;
-    Serial.printf("Key%d %s\n", i + 1, down ? "pressed" : "released");
-    if (down) {
-      char line[16];
-      snprintf(line, sizeof(line), "Key%d pressed", i + 1);
-      float t = NAN, h = NAN;
-      bool shtOk = readSht41(t, h);
-      drawScreen(line, t, h, shtOk);
+    if (down != wasDown[i]) {
+      wasDown[i] = down;
+      if (down) polledPresses[i]++;
+      Serial.printf("Key%d level went %s (polled presses %u, interrupt presses %u)\n", i + 1, down ? "LOW" : "high",
+                    (unsigned)polledPresses[i], (unsigned)keyPresses[i]);
     }
+    uint32_t count = max(polledPresses[i], (uint32_t)keyPresses[i]);
+    if (count == shownPresses[i]) continue;
+    shownPresses[i] = count;
+    changed = true;
+  }
+  if (changed) {
+    char line[24];
+    snprintf(line, sizeof(line), "K1:%u K2:%u K3:%u", (unsigned)shownPresses[0], (unsigned)shownPresses[1],
+             (unsigned)shownPresses[2]);
+    float t = NAN, h = NAN;
+    bool shtOk = readSht41(t, h);
+    drawScreen(line, t, h, shtOk);
   }
   if (millis() - lastReportMs >= REPORT_MS) {
     lastReportMs = millis();

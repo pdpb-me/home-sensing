@@ -38,11 +38,23 @@ Devices never talk to each other (no ESP-NOW, no gateway). Each uses home Wi-Fi 
 - Devices write through RPC `ingest(p_device_id, p_key, p_readings)` with the anon key plus a per-device secret (SHA-256 in `devices.key_hash`). Readings carry a Unix `ts`.
 - No edge functions exist yet. One device registered: `entrance`.
 
+## Hub hardware facts (verified on the board 2026-11-15)
+
+- **Display reset bug:** Seeed_GFX2 configures the panel reset pin (GPIO38) with `gpio_set_direction()` but pulses it with `digitalWrite()`, which the ESP32 core ignores for pins that never went through `pinMode()`. The panel is then never woken from deep sleep and every update after the first times out (2 x 30 s). Fix: `pinMode(38, OUTPUT); digitalWrite(38, HIGH);` right after `display.begin()`. For the same reason `digitalRead()`/`digitalWrite()` on any pin the library owns (43, 44, 10, 38, 4) do nothing unless `pinMode()` was called first.
+- Full update takes about 2.3 s and blocks. Read keys with interrupts, not polling.
+- Battery: ADC on GPIO1 through a 10k/10k divider (multiply by 2), enabled by **GPIO39** active high (EE05 schematic "ADC_EN"). Not GPIO6, which is free.
+- GPIO43 (PWR_EN) switches the `VCC_3V3` rail that feeds the panel **and** the 3V3 hole on the expansion header, so the SHT41 is only powered while GPIO43 is high. The library sets it high in `begin()` and leaves it there.
+- Expansion header holes (schematic J2/J4), counted from the USB end. Right row: VBUS, GND, VCC_3V3, GPIO11, GPIO12, GPIO13, NFC. Other row: GPIO5 (SDA), GPIO6 (SCL), PWR_EN, EDP_RES, ADC_EN, GPIO40, NFC. Pedro confirmed the 3V3 hole by measurement; the SHT41 answers at 0x44 on GPIO5/GPIO6.
+- Keys: GPIO2, GPIO3, GPIO8, active low, external 10k pull-ups and 100 nF. They bounce: a press and its release each fire a falling-edge interrupt (measured: 2 counts per press).
+- XIAO S3 Plus numbering: D11 = GPIO38, D12 = GPIO39, D13 = GPIO40, D14 = GPIO41, D15 = GPIO42, D16 = GPIO10.
+- Opening the serial port can reset the board (USB CDC), and reading the flash with esptool stalls at about 315 KB.
+
 ## Toolchain (verified 2026-11-15)
 
 - Arduino IDE 2 with bundled CLI: `%LOCALAPPDATA%\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` (not on PATH).
-- Core `esp32:esp32` 3.0.7. Boards: `esp32:esp32:XIAO_ESP32C6`, `esp32:esp32:XIAO_ESP32S3` (no "S3 Plus" entry in this core version).
-- Libraries live in `%OneDrive%\Documents\Arduino\libraries`. Present: GxEPD2, Sensirion I2C SCD4x, Adafruit SHT4x. **Missing: Seeed_GFX2.**
+- Core `esp32:esp32` 3.3.12 (Seeed_GFX2 does not compile on 3.0.7). Boards: `esp32:esp32:XIAO_ESP32C6`, `esp32:esp32:XIAO_ESP32S3_Plus` (what the Seeed wiki recommends for the EE05), `esp32:esp32:XIAO_ESP32S3`. Hub options: `CDCOnBoot=default,PSRAM=opi`.
+- Libraries live in `%OneDrive%\Documents\Arduino\libraries`. Present: Seeed_GFX2 (git clone, needs `core.longpaths`), GxEPD2, Sensirion I2C SCD4x, Adafruit SHT4x.
+- Ports as confirmed by Pedro on 2026-11-15: COM4 = Hub, COM10 = Node.
 - No Supabase CLI, no Deno, no `gh`: admin installs are blocked on this laptop. Use the Supabase MCP tools.
 - Serial ports change; confirm with Pedro before flashing. Identify a chip with `esptool flash_id`.
 
