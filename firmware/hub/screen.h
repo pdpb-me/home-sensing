@@ -25,6 +25,7 @@ const int16_t VALUE_BASE = 24;
 const int16_t AREA_Y = BAR_H, AREA_H = SCREEN_H - BAR_H;  // the big area: 250 x 92
 const int16_t BAND_H = 12;               // low-battery band
 const int16_t WEATHER_TEXT_X = 50, WEATHER_RULE_X = 142;
+const size_t MESSAGE_BYTES = 32 * 92;    // 250 x 92, rows padded to 32 bytes
 
 struct RoomReading {
   float tempC;
@@ -33,13 +34,18 @@ struct RoomReading {
 
 struct ScreenState {
   RoomReading living;
+  bool livingKnown;        // false: the Hub's own sensor didn't answer
   RoomReading bedroom;
   float co2Ppm;
+  bool bedroomKnown;       // false: nothing received from the Node yet
   uint16_t bedroomAgeMin;  // how old the bedroom reading is
   bool co2Alarm;           // from nextCo2Alarm(), not straight from co2Ppm
   bool showMessage;        // false: weather view
+  bool weatherKnown;
   float outsideNowC, outsideMaxC;
   uint8_t rainPercent;
+  uint8_t weatherCode;     // WMO code, as Open-Meteo reports it
+  char place[16];          // upper case, shown as "OGGI A <place>"
   bool batteryLow;
 };
 
@@ -47,6 +53,17 @@ bool nextCo2Alarm(bool alarm, float co2Ppm) {
   if (co2Ppm >= CO2_ALARM_ON_PPM) return true;
   if (co2Ppm <= CO2_ALARM_OFF_PPM) return false;
   return alarm;
+}
+
+// Same table as iconForCode() in tools/hub_screen/screens.js
+WeatherIcon weatherIconFor(uint8_t code) {
+  if (code == 0) return ICON_CLEAR;
+  if (code == 1 || code == 2) return ICON_PARTLY;
+  if (code == 45 || code == 48) return ICON_FOG;
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return ICON_RAIN;
+  if ((code >= 71 && code <= 77) || code == 85 || code == 86) return ICON_SNOW;
+  if (code >= 95) return ICON_THUNDER;
+  return ICON_CLOUD;
 }
 
 // ---------- Text and bitmaps ----------
@@ -101,6 +118,12 @@ void fillBox(int16_t x, int16_t y, int16_t w, int16_t h, bool ink) {
   display.fillRect(x, y, w, h, ink ? TFT_BLACK : TFT_WHITE);
 }
 
+// A small-caps label, bold when it fits the given width and regular otherwise
+static void drawLabelAt(const char* text, int16_t x, int16_t baseline, int16_t maxWidth, bool ink = true) {
+  const Font& font = textWidth(FONT_LABEL_BOLD, text) <= maxWidth ? FONT_LABEL_BOLD : FONT_LABEL;
+  drawText(font, text, x, baseline, ink);
+}
+
 // ---------- Top bar ----------
 
 // Only called above STALE_MINUTES, so the smallest value is 2 H
@@ -110,16 +133,15 @@ static void ageLabel(char* out, size_t size, const char* prefix, uint16_t minute
   else snprintf(out, size, "%s · %d GG FA", prefix, min(99, (hours + 12) / 24));
 }
 
-// Bold when it fits its column, regular otherwise
-static void drawLabel(const char* text, int16_t x, int16_t maxWidth, bool ink = true) {
-  const Font& font = textWidth(FONT_LABEL_BOLD, text) <= maxWidth ? FONT_LABEL_BOLD : FONT_LABEL;
-  drawText(font, text, x, LABEL_BASE, ink);
-}
-
-static void drawRoom(uint8_t col, const char* label, const RoomReading& r, bool showWord) {
+static void drawRoom(uint8_t col, const char* label, const RoomReading& r, bool known, bool showWord) {
   const int16_t x = COL_X[col] + COL_PAD[col];
   char buf[16];
-  drawLabel(label, x, COL_W[col] - COL_PAD[col] - 3);
+  drawLabelAt(label, x, LABEL_BASE, COL_W[col] - COL_PAD[col] - 3);
+  if (!known) {
+    int16_t pen = drawText(FONT_VALUE, "--.-°", x, VALUE_BASE) + 2;
+    drawText(FONT_PERCENT, "--%", pen, VALUE_BASE);
+    return;
+  }
   snprintf(buf, sizeof(buf), "%.1f°", r.tempC);
   int16_t pen = drawText(FONT_VALUE, buf, x, VALUE_BASE) + 2;
   // Whole percent, capped at 99 so the widest row still fits its column
@@ -133,27 +155,27 @@ static void drawRoom(uint8_t col, const char* label, const RoomReading& r, bool 
   else drawText(FONT_WORD, "ok", pen, VALUE_BASE);
 }
 
-static void drawCo2(const char* label, float ppm, bool alarm) {
+static void drawCo2(const char* label, float ppm, bool known, bool alarm) {
   if (alarm) fillBox(COL_X[2], 0, COL_W[2], BAR_H, true);
   const bool ink = !alarm;
   const int16_t x = COL_X[2] + COL_PAD[2];
-  char buf[8];
-  drawLabel(label, x, COL_W[2] - COL_PAD[2] - 3, ink);
-  snprintf(buf, sizeof(buf), "%ld", lroundf(ppm));
+  char buf[8] = "----";
+  drawLabelAt(label, x, LABEL_BASE, COL_W[2] - COL_PAD[2] - 3, ink);
+  if (known) snprintf(buf, sizeof(buf), "%ld", lroundf(ppm));
   int16_t pen = drawText(FONT_VALUE, buf, x, VALUE_BASE, ink) + 3;
   drawText(FONT_WORD, "ppm", pen, VALUE_BASE, ink);
 }
 
 static void drawTopBar(const ScreenState& s) {
-  const bool stale = s.bedroomAgeMin > STALE_MINUTES;
+  const bool stale = s.bedroomKnown && s.bedroomAgeMin > STALE_MINUTES;
   char bedroomLabel[24] = "CAMERA", co2Label[24] = "CO2 CAMERA";
   if (stale) {
     ageLabel(bedroomLabel, sizeof(bedroomLabel), "CAMERA", s.bedroomAgeMin);
     ageLabel(co2Label, sizeof(co2Label), "CO2", s.bedroomAgeMin);
   }
-  drawRoom(0, "SALOTTO", s.living, true);
-  drawRoom(1, bedroomLabel, s.bedroom, !stale);
-  drawCo2(s.co2Alarm ? "APRI FINESTRA" : co2Label, s.co2Ppm, s.co2Alarm);
+  drawRoom(0, "SALOTTO", s.living, s.livingKnown, true);
+  drawRoom(1, bedroomLabel, s.bedroom, s.bedroomKnown, !stale);
+  drawCo2(s.co2Alarm ? "APRI FINESTRA" : co2Label, s.co2Ppm, s.bedroomKnown, s.co2Alarm);
   fillBox(COL_X[1] - 1, 0, 1, BAR_H, true);
   fillBox(COL_X[2] - 1, 0, 1, BAR_H, true);
   fillBox(0, BAR_H - 1, SCREEN_W, 1, true);
@@ -163,15 +185,15 @@ static void drawTopBar(const ScreenState& s) {
 
 static void drawWeather(const ScreenState& s, int16_t areaH) {
   const bool compact = areaH < AREA_H;
-  char now[8], buf[8];
-  snprintf(now, sizeof(now), "%ld°", lroundf(s.outsideNowC));
+  char now[8] = "--°", buf[24];
+  if (s.weatherKnown) snprintf(now, sizeof(now), "%ld°", lroundf(s.outsideNowC));
   // The large digits when they fit before the rule, the smaller ones for values like -10°
   const bool useBig = !compact && textWidth(FONT_BIG, now) <= WEATHER_RULE_X - 4 - WEATHER_TEXT_X;
   const Font& big = useBig ? FONT_BIG : FONT_BIG_SMALL;
 
+  const Icon& icon = (compact ? ART_WEATHER_SMALL : ART_WEATHER)[s.weatherKnown ? weatherIconFor(s.weatherCode) : ICON_CLOUD];
   const int16_t midY = AREA_Y + areaH / 2;
-  if (compact) drawBits(ART_RAIN_SMALL, ART_RAIN_SMALL_W, ART_RAIN_SMALL_H, 8, midY - ART_RAIN_SMALL_H / 2, true);
-  else drawBits(ART_RAIN, ART_RAIN_W, ART_RAIN_H, 8, midY - ART_RAIN_H / 2, true);
+  drawBits(icon.bits, icon.w, icon.h, 8, midY - icon.h / 2, true);
 
   const int16_t labelBase = AREA_Y + (compact ? 12 : 14);
   drawText(FONT_LABEL_BOLD, "FUORI ADESSO", WEATHER_TEXT_X, labelBase);
@@ -179,16 +201,19 @@ static void drawWeather(const ScreenState& s, int16_t areaH) {
 
   fillBox(WEATHER_RULE_X, AREA_Y + (compact ? 8 : 10), 1, areaH - (compact ? 16 : 20), true);
   const int16_t left = WEATHER_RULE_X + 10, right = SCREEN_W - 10;
-  drawText(FONT_LABEL_BOLD, "OGGI A MILANO", left, labelBase);
+  snprintf(buf, sizeof(buf), "OGGI A %s", s.place[0] ? s.place : "MILANO");
+  drawLabelAt(buf, left, labelBase, right - left);
 
   int16_t base = labelBase + (compact ? 20 : 24);
   drawText(FONT_ROW, "Max", left, base);
-  snprintf(buf, sizeof(buf), "%ld°", lroundf(s.outsideMaxC));
+  if (s.weatherKnown) snprintf(buf, sizeof(buf), "%ld°", lroundf(s.outsideMaxC));
+  else snprintf(buf, sizeof(buf), "--°");
   drawText(FONT_ROW_BOLD, buf, right - textWidth(FONT_ROW_BOLD, buf), base);
 
   base += compact ? 18 : 20;
   drawText(FONT_ROW, "Pioggia", left, base);
-  snprintf(buf, sizeof(buf), "%u%%", s.rainPercent);
+  if (s.weatherKnown) snprintf(buf, sizeof(buf), "%u%%", s.rainPercent);
+  else snprintf(buf, sizeof(buf), "--%%");
   drawText(FONT_ROW_BOLD, buf, right - textWidth(FONT_ROW_BOLD, buf), base);
 }
 
@@ -206,7 +231,8 @@ static void drawBatteryBand() {
 }
 
 // Draws the whole screen into the display's buffer; the caller sends it with display.update().
-// messageBits is a 250x92 bitmap (rows of 32 bytes), copied as it is.
+// messageBits is a 250x92 bitmap (MESSAGE_BYTES long), copied as it is. With the low-battery band
+// showing, the band covers the bottom 12 rows of the message (Pedro's choice).
 void drawScreen(const ScreenState& s, const uint8_t* messageBits) {
   display.fillScreen(TFT_WHITE);
   drawTopBar(s);
