@@ -34,7 +34,7 @@
 #include "panel/Panel_EPaper.h"
 #include "secrets.h"
 
-#define FW_VERSION "hub 0.5"
+#define FW_VERSION "hub 0.6"
 #ifndef SLEEP_ON_USB
 #define SLEEP_ON_USB 0
 #endif
@@ -58,8 +58,12 @@ const uint32_t TLS_HANDSHAKE_S = 8;       // the default is 120 s of radio on a 
 // ---------- Pins ----------
 const int PIN_SDA = 5;
 const int PIN_SCL = 6;
-const int PIN_KEYS[3] = {2, 3, 8};        // Key1, Key2, Key3: active low, 10k pull-ups on the board
-const uint64_t KEY_WAKE_MASK = (1ULL << 2) | (1ULL << 3) | (1ULL << 8);
+// Key1, Key2, Key3 on the board (active low, 10k pull-ups there), plus an external push button between
+// GPIO11 (4th hole of the right header row) and GND. It does what the keys do. The header has no
+// always-on 3V3 for a pull-up resistor, so GPIO11 uses the chip's own pull-up, awake and asleep.
+const int PIN_EXTERNAL_KEY = 11;
+const int PIN_KEYS[4] = {2, 3, 8, PIN_EXTERNAL_KEY};
+const uint64_t KEY_WAKE_MASK = (1ULL << 2) | (1ULL << 3) | (1ULL << 8) | (1ULL << PIN_EXTERNAL_KEY);
 const int PIN_PANEL_RESET = 38;
 const int PIN_PANEL_POWER = 43;           // switches the rail that feeds the display and the SHT41
 const int PIN_BATTERY = 1;                // VBAT through a 10k/10k divider
@@ -527,6 +531,12 @@ void sleepFor(uint32_t seconds) {
   // wake the Hub again at once, over and over. In that case this sleep ends by timer only.
   bool keyDown = false;
   for (int pin : PIN_KEYS) keyDown = keyDown || digitalRead(pin) == LOW;
+  // The external button's pull-up has to stay on in deep sleep, or the open pin would float and wake the Hub
+  rtc_gpio_init((gpio_num_t)PIN_EXTERNAL_KEY);
+  rtc_gpio_set_direction((gpio_num_t)PIN_EXTERNAL_KEY, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pulldown_dis((gpio_num_t)PIN_EXTERNAL_KEY);
+  rtc_gpio_pullup_en((gpio_num_t)PIN_EXTERNAL_KEY);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
   if (!keyDown) esp_sleep_enable_ext1_wakeup_io(KEY_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
   else Serial.println("  a key is down: sleeping without the key wake-up");
   esp_deep_sleep_start();
@@ -543,7 +553,7 @@ void setup() {
   gpio_hold_dis((gpio_num_t)PIN_BATTERY_ENABLE);
   for (int pin : PIN_KEYS) {
     rtc_gpio_deinit((gpio_num_t)pin);
-    pinMode(pin, INPUT);
+    pinMode(pin, pin == PIN_EXTERNAL_KEY ? INPUT_PULLUP : INPUT);
   }
 
   Wake wake = WAKE_POWER;
@@ -596,7 +606,7 @@ void loop() {
       wake = WAKE_KEY;
       const uint32_t pressedMs = millis();
       while (millis() - pressedMs < 3000 &&
-             (digitalRead(PIN_KEYS[0]) == LOW || digitalRead(PIN_KEYS[1]) == LOW || digitalRead(PIN_KEYS[2]) == LOW)) delay(10);
+             (digitalRead(PIN_KEYS[0]) == LOW || digitalRead(PIN_KEYS[1]) == LOW || digitalRead(PIN_KEYS[2]) == LOW || digitalRead(PIN_KEYS[3]) == LOW)) delay(10);
       break;
     }
     delay(20);
