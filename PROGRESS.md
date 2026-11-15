@@ -8,6 +8,8 @@ Updated: 2026-11-15 (evening) · Working branch: `hub-node`
 
 **Hub firmware is `hub 0.5` since 19:48 on 2026-11-15**: at Pedro's request a second key press during the weather view puts the message back at once instead of after 60 s (a change to HANDOFF.md section 5, "Tasti"; that wake does not sync). Flashed and reporting; the key behaviour itself still has to be tried by Pedro. The evening run for Phase 5 counts from 19:48.
 
+**Rooms tab side by side** (Pedro's request): Camera and Salotto share the tab, one small screen each, both values per row, one plot per room. Published at 19:59 (`main` = `4827afd`); Pedro looked at it on his phone and said it looks good.
+
 **Phase 6 met its exit criterion** at about 19:40: Pedro sent messages from his phone (ids 13 and 14), saw them on the Hub, and the first was marked seen at 19:40:53, which he saw in the web app. It needs his word to close. What follows is how it got there.
 
 **Phase 6 (web app) is online** (published with his ok on 2026-11-15, evening: `main` fast-forwarded to `hub-node` and pushed; GitHub Pages serves the new page). It was started with Pedro's ok on 2026-11-15 while Phase 5's evening run goes on. `dashboard/index.html` on `hub-node` has three tabs: Rooms (as before, now for Camera, Salotto and the old Entrance, with only the rows each device measures), Message (the editor and the list of sent messages) and Devices (last contact, battery, Wi-Fi, awake time, firmware). No migration was needed: the backend from Phase 3 already had everything.
