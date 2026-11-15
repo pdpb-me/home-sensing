@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect x='4' y='4' width='88' height='88' rx='17' fill='%23fbf9f2' stroke='%2316140f' stroke-width='7'/><rect x='21' y='48' width='14' height='27' fill='%23a9d18e' stroke='%2316140f' stroke-width='3'/><rect x='41' y='33' width='14' height='42' fill='%23f2c14e' stroke='%2316140f' stroke-width='3'/><rect x='61' y='20' width='14' height='55' fill='%2316140f'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&family=Tiny5&display=swap">
 <style>
   /* Sage, mustard and black mean status, and nothing else. Selection uses shape: a shadow, an arrow, an open chart. */
   :root {
@@ -29,7 +29,7 @@
   h1 { font-size: 28px; }
   h2 { font-size: 22px; }
   h1::before, h2::before { content: ""; width: 10px; height: 10px; background: var(--ink); flex: none; }
-  button, select, input { font: inherit; color: inherit; }
+  button, select, input, textarea { font: inherit; color: inherit; }
   button, select { background: var(--card); border: 2px solid var(--ink); border-radius: 22px; min-height: 44px; padding: 0 14px; font-weight: 700; cursor: pointer; }
   :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   .muted { color: var(--muted); font-size: 14px; }
@@ -53,6 +53,7 @@
   .screen-temp { font-size: 48px; font-weight: 700; line-height: 1; text-align: center; padding: 10px 0 8px; margin: 0 10px; border-bottom: 2px solid var(--ink); }
   .screen-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-grow: 1; align-items: center; text-align: center; }
   .screen-row > div + div { border-left: 2px solid var(--ink); }
+  .screen-row.single { grid-template-columns: minmax(0, 1fr); }
   .screen-row b { display: block; font-size: 30px; line-height: 1.1; }
   .screen-air { font-size: 20px; font-weight: 700; text-align: center; padding: 6px 0 11px; flex: none; }
   .screen-air.poor { background: var(--ink); color: #e6e5dc; }
@@ -75,7 +76,7 @@
   .box { background: var(--card); border: 2px solid var(--ink); border-radius: 10px; padding: 14px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .ranges { display: flex; gap: 6px; flex-wrap: wrap; }
   .ranges button { min-height: 40px; padding: 0 12px; font-size: 14px; }
-  .ranges button.on { background: var(--ink); color: var(--card); }
+  .ranges button.on, .tabs button.on, .tools button.on { background: var(--ink); color: var(--card); }
   .readout { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font: 500 14px var(--mono); min-height: 20px; }
   .readout b { font-weight: 700; }
   .plot-wrap { display: flex; gap: 6px; min-width: 0; --plot: 180px; }
@@ -102,6 +103,29 @@
   .msg { font-size: 14px; margin: 12px 0 0; }
   .msg.error { font-weight: 700; }
   .banner { background: var(--card); border: 2px solid var(--ink); border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 700; margin-bottom: 16px; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+  .tabs button { min-height: 40px; font-size: 15px; }
+  .narrow { max-width: 560px; display: flex; flex-direction: column; gap: 14px; }
+  .narrow p { margin: 0; }
+  .twin.hub { padding: 16px; }
+  .paper { display: block; width: 100%; height: auto; aspect-ratio: 250 / 92; background: #e6e5dc; border-radius: 4px; image-rendering: pixelated; }
+  #msg-canvas { touch-action: none; cursor: crosshair; }
+  textarea, .field input { width: 100%; padding: 10px 12px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); }
+  textarea { display: block; resize: vertical; min-height: 68px; }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .tools button { min-height: 40px; padding: 0 12px; font-size: 14px; }
+  .field { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+  .field input { width: 9em; min-height: 40px; padding: 0 12px; }
+  .send { background: var(--ink); color: var(--card); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .item { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 2px 2px 0 var(--ink); padding: 10px 12px; }
+  .item .paper { width: 125px; flex: none; border: 2px solid var(--ink); }
+  .item .text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .item .head { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; }
+  .item .label { font-size: 17px; font-weight: 700; }
+  .item .sub { font: 400 13px var(--mono); }
+  .item button { min-height: 36px; padding: 0 12px; font-size: 14px; margin-top: 4px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -132,6 +156,13 @@
 
     <div id="banner" class="banner" hidden></div>
 
+    <nav class="tabs" aria-label="Sections">
+      <button data-view="rooms" class="on">Rooms</button>
+      <button data-view="message">Message</button>
+      <button data-view="devices">Devices</button>
+    </nav>
+
+    <div id="view-rooms">
     <div class="layout">
       <div class="side">
         <!-- A copy of the node's e-paper screen, drawn from the latest reading -->
@@ -142,16 +173,16 @@
                 <path d="M2 7 A14 14 0 0 1 22 7"/><path d="M6.5 11.5 A8 8 0 0 1 17.5 11.5"/><rect x="10.5" y="15" width="3" height="3" fill="#16140f" stroke="none"/>
                 <g id="t-offline" hidden><path d="M2 18 L22 1" stroke="#e6e5dc" stroke-width="5"/><path d="M2 18 L22 1"/></g>
               </svg>
-              <svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="#16140f" stroke-width="2" aria-hidden="true">
+              <svg id="t-batt" width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="#16140f" stroke-width="2" aria-hidden="true">
                 <rect x="1" y="1" width="23" height="12"/><rect x="25" y="4" width="3" height="6" fill="#16140f" stroke="none"/>
                 <rect id="t-fill" x="3" y="3" width="0" height="8" fill="#16140f" stroke="none"/>
                 <path id="t-bolt" d="M15 2 L9 8 H13 L11 12 L17 6 H13 Z" fill="#16140f" stroke="none" hidden/>
               </svg>
             </div>
             <div class="screen-temp" id="t-temp">--</div>
-            <div class="screen-row">
+            <div class="screen-row" id="t-row">
               <div><span id="t-hum-word">--</span><b id="t-hum">--</b></div>
-              <div><span>CO2</span><b id="t-co2">--</b></div>
+              <div id="t-co2-cell"><span>CO2</span><b id="t-co2">--</b></div>
             </div>
             <div class="screen-air" id="t-air">Air --</div>
           </div>
@@ -183,6 +214,35 @@
         <div class="legend" id="legend"></div>
         <p id="stats"></p>
       </div>
+    </div>
+    </div>
+
+    <div id="view-message" class="narrow" hidden>
+      <div class="box">
+        <!-- The canvas is the 250 x 92 area under the Hub's top bar, pixel for pixel -->
+        <div class="twin hub"><canvas id="msg-canvas" class="paper" width="250" height="92" aria-label="Message as the Hub will show it. Draw here with a finger or the mouse."></canvas></div>
+        <textarea id="msg-text" rows="2" maxlength="140" placeholder="Write here, draw on the screen above" aria-label="Message text"></textarea>
+        <div class="tools">
+          <button data-font="hand" class="on">Handwriting</button>
+          <button data-font="print">Print</button>
+        </div>
+        <div class="tools">
+          <button data-tool="pen" class="on">Pen</button>
+          <button data-tool="erase">Eraser</button>
+          <button id="msg-undo">Undo</button>
+          <button id="msg-clear">Clear</button>
+        </div>
+        <label class="field">Signed <input id="msg-name" maxlength="12" placeholder="Your name" autocomplete="given-name"></label>
+        <button id="msg-send" class="send">Send to the Hub</button>
+        <p id="msg-status" class="msg" role="status"></p>
+        <p class="muted">The Hub shows exactly these pixels. It picks a new message up the next time it wakes: a few minutes by day, up to half an hour at night.</p>
+      </div>
+      <h2>Sent</h2>
+      <div class="rows" id="msg-list"></div>
+    </div>
+
+    <div id="view-devices" class="narrow" hidden>
+      <div class="rows" id="device-list"></div>
     </div>
   </section>
 
@@ -226,12 +286,15 @@ const RANGES = {
   "1y":  { ms: 365 * 864e5, bucket: "7 days",     bucketMs: 6048e5,  start: "1 year ago", mid: "6 months ago" },
 };
 const BUCKET_ORIGIN = Date.UTC(2000, 0, 1);  // readings_bucketed counts its buckets from here
-const OFFLINE_AFTER_MS = 45 * 60e3;  // the node uploads every 30 minutes
+const OFFLINE_AFTER_MS = 90 * 60e3;  // the devices report at least every 30 minutes; the Hub also calls data stale after 90
+const KIND = { node: [0, "Sensor"], hub: [1, "Hub"], legacy: [2, "Old sensor"] };  // order in the lists, and a word for people
+const VIEW_TITLES = { message: "Message", devices: "Devices" };
+const HUB_BATTERY_LOW_V = 3.5;       // BATTERY_LOW_V in firmware/hub/hub.ino
 const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const state = { device: null, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
+const state = { view: "rooms", device: null, devices: [], names: {}, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
 const wide = window.matchMedia("(min-width: 900px)");
 
 // ---------- Auth ----------
@@ -271,24 +334,47 @@ $("signout").addEventListener("click", async () => {
 
 // ---------- Data ----------
 
+async function loadDevices() {
+  const { data, error } = await db.from("devices").select("id, name, kind, last_seen_at, battery_v, rssi_dbm, fw_version, awake_ms");
+  if (error) throw error;
+  const rank = (d) => (KIND[d.kind] || KIND.legacy)[0];
+  data.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  state.devices = data;
+  state.names = Object.fromEntries(data.map((d) => [d.id, d.name]));
+}
+
 async function startApp() {
-  const { data: devices, error } = await db.from("devices").select("id, name").order("name");
-  if (error) return showBanner("Couldn't load devices: " + error.message);
-  if (!devices.length) {
+  try {
+    await loadDevices();
+  } catch (err) {
+    return showBanner("Couldn't load devices: " + (err.message || err));
+  }
+  if (!state.devices.length) {
     const { data } = await db.auth.getUser();
     return showBanner(`Signed in as ${data.user?.email}, but this account has no access. Add the email to the viewers table in Supabase.`);
   }
 
+  // The room with the CO2 sensor comes first, a retired device last
   const select = $("device");
-  select.innerHTML = devices.map((d) => `<option value="${d.id}">${d.name}</option>`).join("");
-  select.hidden = devices.length < 2;
+  select.innerHTML = state.devices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
   select.addEventListener("change", () => { state.device = select.value; state.picked = null; refresh(); });
-  state.device = devices[0].id;
-  state.names = Object.fromEntries(devices.map((d) => [d.id, d.name]));
+  state.device = state.devices[0].id;
 
   initControls();
-  await refresh();
+  initEditor();
+  showView("rooms");
   setInterval(refresh, REFRESH_MS);
+}
+
+function showView(view) {
+  state.view = view;
+  for (const v of ["rooms", "message", "devices"]) $("view-" + v).hidden = v !== view;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  $("device").hidden = view !== "rooms" || state.devices.length < 2;
+  $("status").hidden = view !== "rooms";
+  $("room-title").textContent = VIEW_TITLES[view] || state.names[state.device];
+  if (view === "message") openEditor();
+  refresh();
 }
 
 async function bucketed(rangeKey) {
@@ -306,26 +392,38 @@ async function bucketed(rangeKey) {
 
 async function refresh() {
   try {
-    const [latestRes, day, rows] = await Promise.all([
-      db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
-        .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
-      bucketed("24h"),
-      state.range === "24h" ? null : bucketed(state.range),
-    ]);
-    if (latestRes.error) throw latestRes.error;
+    if (state.view === "rooms") {
+      await refreshRoom();
+    } else {
+      await loadDevices();
+      if (state.view === "message") await refreshMessages();
+      else renderDevices();
+    }
     $("banner").hidden = true;
-    $("room-title").textContent = state.names[state.device];
-    renderRows(latestRes.data[0], day);
-    state.rows = rows || day;
-    renderChart();
   } catch (err) {
-    showBanner("Couldn't load readings: " + (err.message || err));
+    showBanner("Couldn't load: " + (err.message || err));
   }
+}
+
+async function refreshRoom() {
+  const [latestRes, day, rows] = await Promise.all([
+    db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
+      .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
+    bucketed("24h"),
+    state.range === "24h" ? null : bucketed(state.range),
+  ]);
+  if (latestRes.error) throw latestRes.error;
+  if (state.view !== "rooms") return;  // the tab changed while this was loading
+  $("room-title").textContent = state.names[state.device];
+  renderRows(latestRes.data[0], day);
+  state.rows = rows || day;
+  renderChart();
 }
 
 // ---------- Rendering ----------
 
 const has = (v) => v !== null && v !== undefined;
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 
 function fmt(v, metric) {
   if (!has(v)) return "--";
@@ -343,7 +441,11 @@ function ago(ms) {
 }
 
 function renderRows(latest, day) {
-  const html = Object.keys(METRICS).map((key) => {
+  // A room only gets the rows its device measures: the Hub has no CO2 sensor, the Node no battery reading
+  const measured = Object.keys(METRICS).filter((key) => has(latest?.[key]) || day.some((r) => has(r[key])));
+  const keys = measured.length ? measured : Object.keys(METRICS);
+  if (!keys.includes(state.metric)) state.metric = keys[0];
+  const html = keys.map((key) => {
     const m = METRICS[key];
     const value = latest?.[key];
     let chip = has(value) ? m.rate(value) : null;
@@ -366,7 +468,7 @@ function renderRows(latest, day) {
     </button>`;
   }).join("");
   // The chart may be sitting inside the rows, so it is taken out before they are replaced
-  $("app").append($("chart-box"));
+  $("view-rooms").append($("chart-box"));
   $("rows").innerHTML = html;
   placeChart();
 
@@ -374,14 +476,14 @@ function renderRows(latest, day) {
   if (!latest) {
     status.className = "status stale";
     $("status-text").textContent = "No readings yet";
-    renderScreen(null, true);
+    renderScreen(null, true, true);
     return;
   }
   const age = Date.now() - new Date(latest.ts);
   const stale = age > OFFLINE_AFTER_MS;
   status.className = stale ? "status stale" : "status";
   $("status-text").textContent = (stale ? "Offline · last seen " : "Updated ") + ago(age);
-  renderScreen(latest, stale);
+  renderScreen(latest, stale, keys.includes("co2_ppm"));
 }
 
 function placeChart() {
@@ -390,7 +492,11 @@ function placeChart() {
   else $("rows").querySelector(`[data-metric="${state.metric}"]`).after(box);
 }
 
-function renderScreen(r, stale) {
+// withCo2 is false for a room whose device has no CO2 sensor: its screen then leaves that part out
+function renderScreen(r, stale, withCo2) {
+  $("t-row").classList.toggle("single", !withCo2);
+  $("t-co2-cell").hidden = !withCo2;
+  $("t-air").hidden = !withCo2;
   $("t-temp").textContent = has(r?.temp_c) ? Number(r.temp_c).toFixed(1) + "°C" : "--";
   $("t-hum").textContent = has(r?.humidity) ? Math.round(r.humidity) + "%" : "--";
   $("t-hum-word").textContent = has(r?.humidity) ? METRICS.humidity.rate(r.humidity)[1] : "--";
@@ -402,12 +508,14 @@ function renderScreen(r, stale) {
   air.classList.toggle("poor", level === "poor");
 
   $("t-offline").toggleAttribute("hidden", !stale);
+  $("t-batt").toggleAttribute("hidden", !r?.charging && !has(r?.battery_pct));
   $("t-bolt").toggleAttribute("hidden", !r?.charging);
   $("t-fill").setAttribute("width", r?.charging || !has(r?.battery_pct) ? 0 : 19 * r.battery_pct / 100);
-  $("screen").setAttribute("aria-label", `Latest reading: ${$("t-temp").textContent}, humidity ${$("t-hum").textContent}, CO2 ${$("t-co2").textContent}, ${air.textContent}`);
+  $("screen").setAttribute("aria-label", `Latest reading: ${$("t-temp").textContent}, humidity ${$("t-hum").textContent}` + (withCo2 ? `, CO2 ${$("t-co2").textContent}, ${air.textContent}` : ""));
 }
 
 function initControls() {
+  document.querySelectorAll(".tabs button").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
   $("rows").addEventListener("click", (e) => {
     const row = e.target.closest(".row");
     if (!row) return;
@@ -494,6 +602,352 @@ function renderChart() {
   const v = known.map((s) => s.v);
   const avg = v.reduce((a, b) => a + b, 0) / v.length;
   $("stats").textContent = `MIN ${fmt(Math.min(...v), state.metric)} · AVG ${fmt(avg, state.metric)} · MAX ${fmt(Math.max(...v), state.metric)}`;
+}
+
+// ---------- Devices ----------
+
+function clock(ts) {
+  const d = new Date(ts);
+  const time = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + time;
+}
+
+function renderDevices() {
+  $("device-list").innerHTML = state.devices.map((d) => {
+    const lines = [];
+    let chip = "";
+    if (has(d.last_seen_at)) {
+      const age = Date.now() - new Date(d.last_seen_at);
+      const offline = age > OFFLINE_AFTER_MS;
+      chip = `<span class="chip ${offline ? "poor" : "good"}">${offline ? "Offline" : "Online"}</span>`;
+      lines.push(`Last contact ${ago(age)}`);
+      if (has(d.battery_v)) {
+        const low = d.battery_v < HUB_BATTERY_LOW_V;
+        if (low && !offline) chip = `<span class="chip fair">Battery low</span>`;
+        lines.push(`Battery ${Number(d.battery_v).toFixed(2)} V`);
+      } else {
+        lines.push("Battery not measured");
+      }
+      if (has(d.rssi_dbm)) lines.push(`Wi-Fi ${d.rssi_dbm} dBm · ${d.rssi_dbm >= -60 ? "strong" : d.rssi_dbm >= -72 ? "fine" : "weak"}`);
+      if (has(d.awake_ms)) lines.push(`Awake ${(d.awake_ms / 1000).toFixed(1)} s per wake-up`);
+      if (has(d.fw_version)) lines.push(`Firmware ${esc(d.fw_version)}`);
+    } else {
+      lines.push("Sends no status. Its readings are under Rooms.");
+    }
+    const kind = (KIND[d.kind] || KIND.legacy)[1];
+    return `<div class="item"><div class="text">
+      <span class="head"><span class="label">${esc(d.name)}</span>${chip}</span>
+      <span class="sub">${kind}</span>
+      ${lines.map((line) => `<span class="sub">${line}</span>`).join("")}
+    </div></div>`;
+  }).join("");
+}
+
+// ---------- Message for the Hub ----------
+
+// The Hub copies the bitmap to its screen as it is: 250 x 92 pixels, 1 bit each, rows padded to 32 bytes,
+// most significant bit first, 1 = black. 2944 bytes, sent as 3928 characters of base64.
+const MSG_W = 250, MSG_H = 92, MSG_STRIDE = 32;
+const MSG_MARGIN = 8;         // left and right
+const MSG_TEXT_TOP = 6;
+const MSG_TEXT_BOTTOM = 77;   // the signature sits under this line
+const MSG_FONTS = {
+  hand:  { family: "Caveat", sizes: [44, 40, 36, 32, 28, 24, 22, 20, 18, 16], ascent: 0.8, descent: 0.25, line: 1.05 },
+  print: { family: '"Familjen Grotesk"', sizes: [34, 30, 26, 22, 20, 18, 16, 14, 12], ascent: 0.76, descent: 0.22, line: 1.15 },
+};
+const PEN_PX = 2, ERASER_PX = 9;
+const TOO_LONG = "Too long: the end is cut off. Shorten it or use fewer lines.";
+const PAPER_RGB = [230, 229, 220], INK_RGB = [22, 20, 15];
+
+const editor = {
+  font: "hand", tool: "pen",
+  strokes: [], stroke: null,                 // freehand: [{ erase, pts: [[x, y], ...] }]
+  text: new Uint8Array(MSG_W * MSG_H),       // typed text and signature, 1 = black
+  draw: new Uint8Array(MSG_W * MSG_H),       // freehand
+  fits: true, opened: false, sending: false,
+  bitmaps: new Map(),                        // message id -> base64, so a bitmap is downloaded once
+};
+const scratch = document.createElement("canvas");
+scratch.width = MSG_W;
+scratch.height = MSG_H;
+const scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
+
+function signature() {
+  const now = new Date();
+  const time = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const name = $("msg-name").value.trim();
+  return name ? `${name} · ${time}` : time;
+}
+
+// Breaks the text into lines no wider than maxWidth with the font already set on the context
+function wrapText(ctx, text, maxWidth) {
+  const lines = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (let word of paragraph.split(/\s+/).filter(Boolean)) {
+      const candidate = line ? line + " " + word : word;
+      if (ctx.measureText(candidate).width <= maxWidth) { line = candidate; continue; }
+      if (line) lines.push(line);
+      // A single word wider than the screen is cut where it stops fitting
+      while (ctx.measureText(word).width > maxWidth && word.length > 1) {
+        let n = word.length - 1;
+        while (n > 1 && ctx.measureText(word.slice(0, n)).width > maxWidth) n--;
+        lines.push(word.slice(0, n));
+        word = word.slice(n);
+      }
+      line = word;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+// Draws the typed text at the largest size that fits, then the signature, and keeps the result as 1-bit
+function renderText() {
+  const ctx = scratchCtx;
+  ctx.clearRect(0, 0, MSG_W, MSG_H);
+  ctx.fillStyle = "#000";
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+
+  const f = MSG_FONTS[editor.font];
+  const text = $("msg-text").value.replace(/\s+$/, "");
+  editor.fits = true;
+  if (text.trim()) {
+    let size, lines;
+    for (size of f.sizes) {
+      ctx.font = `700 ${size}px ${f.family}`;
+      lines = wrapText(ctx, text, MSG_W - 2 * MSG_MARGIN);
+      editor.fits = MSG_TEXT_TOP + size * (f.ascent + (lines.length - 1) * f.line + f.descent) <= MSG_TEXT_BOTTOM;
+      if (editor.fits) break;
+    }
+    lines.forEach((line, i) => ctx.fillText(line, MSG_MARGIN, Math.round(MSG_TEXT_TOP + size * (f.ascent + i * f.line))));
+    if (!editor.fits) ctx.clearRect(0, MSG_TEXT_BOTTOM, MSG_W, MSG_H - MSG_TEXT_BOTTOM);  // keep the signature readable
+  }
+
+  ctx.font = "8px Tiny5, monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(signature(), MSG_W - MSG_MARGIN, MSG_H - 5);
+
+  // Black where the canvas is covered and dark, which text always is. A colour emoji keeps its darker
+  // parts and gets an outline, so a pale one does not vanish and a face does not become a blob.
+  const px = ctx.getImageData(0, 0, MSG_W, MSG_H).data;
+  const covered = (x, y) => x >= 0 && x < MSG_W && y >= 0 && y < MSG_H && px[(y * MSG_W + x) * 4 + 3] >= 128;
+  for (let y = 0; y < MSG_H; y++) {
+    for (let x = 0; x < MSG_W; x++) {
+      const i = y * MSG_W + x;
+      const light = 0.3 * px[i * 4] + 0.59 * px[i * 4 + 1] + 0.11 * px[i * 4 + 2];
+      const edge = !covered(x - 1, y) || !covered(x + 1, y) || !covered(x, y - 1) || !covered(x, y + 1);
+      editor.text[i] = covered(x, y) && (light < 150 || edge) ? 1 : 0;
+    }
+  }
+  paintEditor();
+  // Only the warning is managed here: a "Sent" or an error stays until the next one
+  if (!editor.fits) setMessageStatus(TOO_LONG, true);
+  else if ($("msg-status").textContent === TOO_LONG) setMessageStatus("");
+}
+
+// A square of the tool's size at every pixel of the line from a to b
+function strokeSegment(a, b, erase) {
+  const size = erase ? ERASER_PX : PEN_PX;
+  const offset = Math.floor((size - 1) / 2);
+  let [x, y] = a;
+  const dx = Math.abs(b[0] - x), dy = -Math.abs(b[1] - y);
+  const sx = x < b[0] ? 1 : -1, sy = y < b[1] ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    for (let j = y - offset; j < y - offset + size; j++) {
+      if (j < 0 || j >= MSG_H) continue;
+      for (let i = x - offset; i < x - offset + size; i++) {
+        if (i >= 0 && i < MSG_W) editor.draw[j * MSG_W + i] = erase ? 0 : 1;
+      }
+    }
+    if (x === b[0] && y === b[1]) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+}
+
+function redrawStrokes() {
+  editor.draw.fill(0);
+  for (const s of editor.strokes) {
+    for (let i = 0; i < s.pts.length; i++) strokeSegment(s.pts[Math.max(0, i - 1)], s.pts[i], s.erase);
+  }
+}
+
+function paintBits(canvas, isBlack) {
+  const ctx = canvas.getContext("2d");
+  const image = ctx.createImageData(MSG_W, MSG_H);
+  for (let i = 0; i < MSG_W * MSG_H; i++) {
+    const rgb = isBlack(i) ? INK_RGB : PAPER_RGB;
+    image.data[i * 4] = rgb[0];
+    image.data[i * 4 + 1] = rgb[1];
+    image.data[i * 4 + 2] = rgb[2];
+    image.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
+function paintEditor() {
+  paintBits($("msg-canvas"), (i) => editor.text[i] || editor.draw[i]);
+}
+
+function packMessage() {
+  const bytes = new Uint8Array(MSG_STRIDE * MSG_H);
+  for (let y = 0; y < MSG_H; y++) {
+    for (let x = 0; x < MSG_W; x++) {
+      if (editor.text[y * MSG_W + x] || editor.draw[y * MSG_W + x]) bytes[y * MSG_STRIDE + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+  }
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function paintMessage(canvas, base64) {
+  let bytes;
+  try { bytes = atob(base64); } catch (err) { return; }
+  if (bytes.length !== MSG_STRIDE * MSG_H) return;
+  paintBits(canvas, (i) => bytes.charCodeAt(Math.floor(i / MSG_W) * MSG_STRIDE + ((i % MSG_W) >> 3)) & (0x80 >> ((i % MSG_W) & 7)));
+}
+
+function setMessageStatus(text, isError) {
+  $("msg-status").className = isError ? "msg error" : "msg";
+  $("msg-status").textContent = text;
+}
+
+function initEditor() {
+  const canvas = $("msg-canvas");
+  const point = (e) => {
+    const box = canvas.getBoundingClientRect();
+    const clamp = (v, max) => Math.max(0, Math.min(max, Math.floor(v)));
+    return [clamp((e.clientX - box.left) * MSG_W / box.width, MSG_W - 1), clamp((e.clientY - box.top) * MSG_H / box.height, MSG_H - 1)];
+  };
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* the stroke still works while the pointer stays on the canvas */ }
+    const p = point(e);
+    editor.stroke = { erase: editor.tool === "erase", pts: [p] };
+    editor.strokes.push(editor.stroke);
+    strokeSegment(p, p, editor.stroke.erase);
+    paintEditor();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!editor.stroke) return;
+    const p = point(e);
+    const last = editor.stroke.pts[editor.stroke.pts.length - 1];
+    if (p[0] === last[0] && p[1] === last[1]) return;
+    editor.stroke.pts.push(p);
+    strokeSegment(last, p, editor.stroke.erase);
+    paintEditor();
+  });
+  const endStroke = () => { editor.stroke = null; };
+  canvas.addEventListener("pointerup", endStroke);
+  canvas.addEventListener("pointercancel", endStroke);
+
+  $("msg-text").addEventListener("input", renderText);
+  $("msg-name").addEventListener("input", () => {
+    try { localStorage.setItem("hs-name", $("msg-name").value.trim()); } catch (err) { /* private window: not remembered */ }
+    renderText();
+  });
+  document.querySelectorAll(".tools [data-font]").forEach((btn) => btn.addEventListener("click", () => {
+    editor.font = btn.dataset.font;
+    document.querySelectorAll(".tools [data-font]").forEach((b) => b.classList.toggle("on", b === btn));
+    renderText();
+  }));
+  document.querySelectorAll(".tools [data-tool]").forEach((btn) => btn.addEventListener("click", () => {
+    editor.tool = btn.dataset.tool;
+    document.querySelectorAll(".tools [data-tool]").forEach((b) => b.classList.toggle("on", b === btn));
+  }));
+  $("msg-undo").addEventListener("click", () => {
+    editor.strokes.pop();
+    redrawStrokes();
+    paintEditor();
+  });
+  $("msg-clear").addEventListener("click", clearEditor);
+  $("msg-send").addEventListener("click", sendMessage);
+  $("msg-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-clear]");
+    if (!btn) return;
+    btn.disabled = true;
+    const { error } = await db.rpc("clear_message", { p_id: Number(btn.dataset.clear) });
+    if (error) showBanner("Couldn't remove the message: " + error.message);
+    refresh();
+  });
+  // The signature carries the time, so the preview follows the clock
+  setInterval(() => { if (state.view === "message" && !editor.sending) renderText(); }, 20e3);
+}
+
+function clearEditor() {
+  $("msg-text").value = "";
+  editor.strokes = [];
+  document.querySelector('.tools [data-tool="pen"]').click();
+  redrawStrokes();
+  renderText();
+}
+
+function openEditor() {
+  if (!editor.opened) {
+    editor.opened = true;
+    try { $("msg-name").value = localStorage.getItem("hs-name") || ""; } catch (err) { /* no storage */ }
+    // Canvas text falls back to another font until these two have loaded
+    Promise.all([document.fonts.load("700 30px Caveat"), document.fonts.load('700 30px "Familjen Grotesk"'), document.fonts.load("8px Tiny5")])
+      .then(renderText, renderText);
+  }
+  renderText();
+}
+
+async function sendMessage() {
+  if (editor.sending) return;
+  if (!$("msg-text").value.trim() && !editor.draw.includes(1)) return setMessageStatus("Write or draw something first.", true);
+  editor.sending = true;
+  $("msg-send").disabled = true;
+  setMessageStatus("Sending…");
+  renderText();  // the signature gets the time of sending
+  const { error } = await db.from("messages").insert({ bitmap: packMessage() });
+  editor.sending = false;
+  $("msg-send").disabled = false;
+  if (error) return setMessageStatus("Not sent: " + error.message, true);
+  clearEditor();
+  setMessageStatus("Sent. It shows on the Hub the next time it wakes.");
+  refresh();
+}
+
+async function refreshMessages() {
+  const { data, error } = await db.from("messages").select("id, created_at, author_email, read_at, cleared_at")
+    .order("id", { ascending: false }).limit(6);
+  if (error) throw error;
+  const missing = data.filter((m) => !editor.bitmaps.has(m.id)).map((m) => m.id);
+  if (missing.length) {
+    const res = await db.from("messages").select("id, bitmap").in("id", missing);
+    if (res.error) throw res.error;
+    for (const m of res.data) editor.bitmaps.set(m.id, m.bitmap);
+  }
+  if (state.view !== "message") return;
+
+  // The Hub shows the newest message only, and only until it is removed
+  const hubSeen = state.devices.filter((d) => d.kind === "hub" && has(d.last_seen_at)).map((d) => new Date(d.last_seen_at).getTime());
+  const hubLast = hubSeen.length ? Math.max(...hubSeen) : 0;
+  $("msg-list").innerHTML = data.length ? data.map((m, i) => {
+    const current = i === 0 && !m.cleared_at;
+    let chip;
+    if (m.read_at) chip = `<span class="chip good">Seen ${clock(m.read_at)}</span>`;
+    else if (!current) chip = `<span class="chip">Not seen</span>`;
+    else if (hubLast > new Date(m.created_at).getTime()) chip = `<span class="chip good">On the Hub</span>`;
+    else chip = `<span class="chip fair">Waiting for the Hub</span>`;
+    const where = m.cleared_at ? "Removed from the Hub" : current ? (m.read_at ? "Still on the Hub" : "A key press on the Hub marks it seen") : "Replaced by a newer one";
+    return `<div class="item">
+      <canvas class="paper" width="${MSG_W}" height="${MSG_H}" data-id="${m.id}" role="img" aria-label="Message sent ${clock(m.created_at)}"></canvas>
+      <div class="text">
+        <span class="head">${chip}</span>
+        <span class="sub">Sent ${clock(m.created_at)} · ${esc(String(m.author_email).split("@")[0])}</span>
+        <span class="sub">${where}</span>
+        ${current ? `<button data-clear="${m.id}">Remove from the Hub</button>` : ""}
+      </div>
+    </div>` ;
+  }).join("") : `<p class="muted">Nothing sent yet.</p>`;
+  $("msg-list").querySelectorAll("canvas").forEach((c) => paintMessage(c, editor.bitmaps.get(Number(c.dataset.id)) || ""));
 }
 
 function showBanner(text) {
