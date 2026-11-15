@@ -122,11 +122,14 @@ static void drawRoom(uint8_t col, const char* label, const RoomReading& r, bool 
   drawLabel(label, x, COL_W[col] - COL_PAD[col] - 3);
   snprintf(buf, sizeof(buf), "%.1f°", r.tempC);
   int16_t pen = drawText(FONT_VALUE, buf, x, VALUE_BASE) + 2;
-  snprintf(buf, sizeof(buf), "%ld%%", lroundf(r.humidity));
+  // Whole percent, capped at 99 so the widest row still fits its column
+  const long humidity = constrain(lroundf(r.humidity), 0L, 99L);
+  snprintf(buf, sizeof(buf), "%ld%%", humidity);
   pen = drawText(FONT_PERCENT, buf, pen, VALUE_BASE) + 2;
   if (!showWord) return;
-  if (r.humidity < HUMIDITY_DRY) drawText(FONT_WORD_BOLD, "dry", pen, VALUE_BASE);
-  else if (r.humidity > HUMIDITY_WET) drawText(FONT_WORD_BOLD, "wet", pen, VALUE_BASE);
+  // Decided on the printed value, so the word never contradicts the number next to it
+  if (humidity < HUMIDITY_DRY) drawText(FONT_WORD_BOLD, "dry", pen, VALUE_BASE);
+  else if (humidity > HUMIDITY_WET) drawText(FONT_WORD_BOLD, "wet", pen, VALUE_BASE);
   else drawText(FONT_WORD, "ok", pen, VALUE_BASE);
 }
 

@@ -23,13 +23,20 @@ const FONTS = {
   word: makeFont({ alias: "Tiny5", size: 8, chars: "abcdefghijklmnopqrstuvwxyz " }),
   wordBold: makeFont({ alias: "Tiny5", size: 8, chars: "abcdefghijklmnopqrstuvwxyz ", bold: true }),
   value: makeFont({ alias: "Inter700", size: 14, chars: "0123456789.-°" }),
-  percent: makeFont({ alias: process.env.PCT || "Inter600", size: 10, chars: "0123456789%-" }),
+  percent: makeFont({ alias: "Inter600", size: 10, chars: "0123456789%-" }),
   row: makeFont({ alias: "Inter500", size: 13, chars: "MaxPiogg " }),
   rowBold: makeFont({ alias: "Inter700", size: 13, chars: "0123456789%°-" }),
   big: makeFont({ alias: "Inter700", size: 50, chars: "0123456789-°" }),
   bigSmall: makeFont({ alias: "Inter700", size: 42, chars: "0123456789-°" }),
 };
 
+// Same rounding as the firmware's lroundf(): halves go away from zero
+const round = (v) => Math.sign(v) * Math.round(Math.abs(v));
+
+// What is printed: whole percent, capped at 99 so the widest row still fits its column
+const shownHumidity = (h) => Math.min(99, Math.max(0, round(h)));
+
+// Decided on the printed value, so the word never contradicts the number next to it
 function humidityWord(h) {
   if (h < HUMIDITY_DRY) return { text: "dry", bold: true };
   if (h > HUMIDITY_WET) return { text: "wet", bold: true };
@@ -52,9 +59,9 @@ function drawRoom(f, col, label, tempC, humidity, showWord) {
   const x = COL_X[col] + COL_PAD[col];
   drawLabel(f, label, x, COL_W[col] - COL_PAD[col] - 3);
   let pen = f.text(FONTS.value, `${tempC.toFixed(1)}°`, x, VALUE_BASE) + 2;
-  pen = f.text(FONTS.percent, `${Math.round(humidity)}%`, pen, VALUE_BASE) + 2;
+  pen = f.text(FONTS.percent, `${shownHumidity(humidity)}%`, pen, VALUE_BASE) + 2;
   if (showWord) {
-    const word = humidityWord(humidity);
+    const word = humidityWord(shownHumidity(humidity));
     f.text(word.bold ? FONTS.wordBold : FONTS.word, word.text, pen, VALUE_BASE);
   }
 }
@@ -65,7 +72,7 @@ function drawCo2(f, label, ppm, alarm) {
   const ink = !alarm;
   const x = x0 + COL_PAD[2];
   drawLabel(f, label, x, COL_W[2] - COL_PAD[2] - 3, ink);
-  const pen = f.text(FONTS.value, String(Math.round(ppm)), x, VALUE_BASE, ink) + 3;
+  const pen = f.text(FONTS.value, String(round(ppm)), x, VALUE_BASE, ink) + 3;
   f.text(FONTS.word, "ppm", pen, VALUE_BASE, ink);
 }
 
@@ -136,7 +143,7 @@ const ICON_RAIN_SMALL = rainIcon(32);
 function drawWeather(f, w, areaH) {
   const compact = areaH < AREA_H;
   const icon = compact ? ICON_RAIN_SMALL : ICON_RAIN;
-  const now = `${Math.round(w.now)}°`;
+  const now = `${round(w.now)}°`;
   const big = !compact && f.textWidth(FONTS.big, now) <= 142 - 4 - 50 ? FONTS.big : FONTS.bigSmall;
   const midY = AREA_Y + Math.floor(areaH / 2);
   blit(f, icon, 8, midY - Math.floor(icon.h / 2));
@@ -149,7 +156,7 @@ function drawWeather(f, w, areaH) {
   f.fillRect(ruleX, AREA_Y + (compact ? 8 : 10), 1, areaH - (compact ? 16 : 20), true);
   const left = ruleX + 10, right = W - 10;
   f.text(FONTS.labelBold, "OGGI A MILANO", left, labelBase);
-  const rows = [["Max", `${Math.round(w.max)}°`], ["Pioggia", `${Math.round(w.rain)}%`]];
+  const rows = [["Max", `${round(w.max)}°`], ["Pioggia", `${round(w.rain)}%`]];
   rows.forEach(([name, value], i) => {
     const base = labelBase + (compact ? 20 : 24) + i * (compact ? 18 : 20);
     f.text(FONTS.row, name, left, base);
@@ -185,12 +192,12 @@ const STATES = {
   "3-open-window": { living: { t: 21.6, h: 47 }, bedroom: { t: 20.9, h: 61, co2: 1480 }, bedroomAgeMin: 4, co2Alarm: true, view: "message", weather: WEATHER, batteryLow: false },
   "4-stale-dry-battery": { living: { t: 20.8, h: 34 }, bedroom: { t: 19.2, h: 57, co2: 790 }, bedroomAgeMin: 120, co2Alarm: false, view: "weather", weather: WEATHER, batteryLow: true },
   "5-message-battery": { living: { t: 21.4, h: 48 }, bedroom: { t: 19.8, h: 55, co2: 870 }, bedroomAgeMin: 4, co2Alarm: false, view: "message", weather: WEATHER, batteryLow: true },
-  "6-cold-wide": { living: { t: 20.0, h: 68 }, bedroom: { t: 28.8, h: 38, co2: 2888 }, bedroomAgeMin: 4, co2Alarm: true, view: "weather", weather: { now: -8, max: 28, rain: 100 }, batteryLow: false },
+  "6-cold-wide": { living: { t: 20.0, h: 100 }, bedroom: { t: 28.8, h: 38, co2: 2888 }, bedroomAgeMin: 4, co2Alarm: true, view: "weather", weather: { now: -8, max: 28, rain: 100 }, batteryLow: false },
   "7-very-stale": { living: { t: 20.0, h: 40 }, bedroom: { t: 19.2, h: 57, co2: 790 }, bedroomAgeMin: 60 * 26, co2Alarm: false, view: "weather", weather: { now: -10, max: -2, rain: 5 }, batteryLow: false },
 };
 
 if (require.main === module) {
-  for (const [name, state] of Object.entries(STATES)) drawScreen(state).savePng(path.join(__dirname, "out", `screen-${process.env.PCT ? process.env.PCT + '-' : ''}${name}.png`), 4);
+  for (const [name, state] of Object.entries(STATES)) drawScreen(state).savePng(path.join(__dirname, "out", `screen-${name}.png`), 4);
   console.log("wrote", Object.keys(STATES).length, "screens to out/");
 }
 

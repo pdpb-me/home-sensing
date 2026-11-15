@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-// Sample message, drawn on a canvas the way the web app will (Caveat, SIL Open Font License 1.1)
+// Sample message, drawn on a canvas the way the web app will. Lettering: Caveat, Copyright 2014 The Caveat Project Authors, SIL Open Font License 1.1 (see OFL.txt)
 static const uint16_t ART_MESSAGE_SAMPLE_W = 250, ART_MESSAGE_SAMPLE_H = 92;
 static const uint8_t ART_MESSAGE_SAMPLE[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

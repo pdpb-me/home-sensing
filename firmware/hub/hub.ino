@@ -21,36 +21,31 @@ const int PIN_KEYS[3] = {2, 3, 8};  // Key1, Key2, Key3: active low, 10k pull-up
 const int PIN_PANEL_RESET = 38;
 
 // ---------- Keys ----------
-// All three keys do the same thing. Presses are caught in interrupts, so none is lost while the
-// display redraws (about 2.3 s, during which loop() is stuck).
-const uint32_t KEY_SETTLE_MS = 30;
-const uint8_t KEY_INDEX[3] = {0, 1, 2};  // the handler gets a pointer: the core drops a null argument
+// All three keys do the same thing. A small task of its own watches them, because loop() is stuck for
+// about 2.3 s whenever the display redraws and would miss presses made in that time.
+const uint32_t KEY_POLL_MS = 5;
+const uint8_t KEY_STABLE_POLLS = 4;  // a level has to hold for 20 ms to count: contact bounce is shorter
 volatile uint32_t keyPresses = 0;
 volatile uint8_t lastKey = 0;
-volatile uint32_t keyChangedMs[3] = {0, 0, 0};
-volatile bool keyHeld[3] = {false, false, false};
 
-// Fires on both edges. A press counts once, when the pin goes low from a settled released state;
-// edges within the settle time of the last accepted one are contact bounce.
-void IRAM_ATTR onKey(void* arg) {
-  const uint8_t i = *(const uint8_t*)arg;
-  const uint32_t now = millis();
-  if (now - keyChangedMs[i] < KEY_SETTLE_MS) return;
-  const bool low = digitalRead(PIN_KEYS[i]) == LOW;
-  if (low == keyHeld[i]) return;
-  keyHeld[i] = low;
-  keyChangedMs[i] = now;
-  if (low) {
-    lastKey = i + 1;
-    keyPresses = keyPresses + 1;
-  }
-}
-
-// If a release edge was read while the pin was still low, the key would stay "held" and swallow
-// the next press. The pin being high for a while settles it.
-void releaseStuckKeys() {
-  for (int i = 0; i < 3; i++) {
-    if (keyHeld[i] && digitalRead(PIN_KEYS[i]) == HIGH && millis() - keyChangedMs[i] > KEY_SETTLE_MS) keyHeld[i] = false;
+void keyTask(void*) {
+  bool down[3] = {false, false, false};
+  uint8_t changedFor[3] = {0, 0, 0};
+  for (;;) {
+    for (int i = 0; i < 3; i++) {
+      const bool low = digitalRead(PIN_KEYS[i]) == LOW;
+      if (low == down[i]) {
+        changedFor[i] = 0;
+      } else if (++changedFor[i] >= KEY_STABLE_POLLS) {
+        down[i] = low;
+        changedFor[i] = 0;
+        if (low) {
+          lastKey = i + 1;
+          keyPresses = keyPresses + 1;
+        }
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(KEY_POLL_MS));
   }
 }
 
@@ -69,7 +64,7 @@ DemoState demo[] = {
   {"CO2 990: back to normal",        {{21.5, 47}, {20.2, 55},  990,   4, false, true,    9, 13,  70, false}},
   {"bedroom data 2 h old, dry, low battery, no message", {{20.8, 34}, {19.2, 57}, 790, 120, false, false, 9, 13, 70, true}},
   {"message with low battery",       {{21.4, 48}, {19.8, 55},  870,   4, false, true,    9, 13,  70, true}},
-  {"widest values",                  {{20.0, 68}, {28.8, 38}, 2888,   4, false, false, -10, 28, 100, false}},
+  {"widest values",                  {{20.0, 100}, {28.8, 38}, 2888,  4, false, false, -10, 28, 100, false}},
 };
 const size_t DEMO_COUNT = sizeof(demo) / sizeof(demo[0]);
 
@@ -108,15 +103,12 @@ void setup() {
   display.setRotation(3);  // 250x122, long edge horizontal
   Serial.printf("Display %d x %d\n", display.width(), display.height());
 
-  for (int i = 0; i < 3; i++) {
-    pinMode(PIN_KEYS[i], INPUT);
-    attachInterruptArg(PIN_KEYS[i], onKey, (void*)&KEY_INDEX[i], CHANGE);
-  }
+  for (int pin : PIN_KEYS) pinMode(pin, INPUT);
+  xTaskCreate(keyTask, "keys", 2048, nullptr, 2, nullptr);  // priority above loop(), so a redraw can't starve it
   showDemoState();
 }
 
 void loop() {
-  releaseStuckKeys();
   const uint32_t presses = keyPresses;
   if (presses != shownPresses) {
     Serial.printf("Key%u pressed\n", (unsigned)lastKey);
