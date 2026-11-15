@@ -49,7 +49,10 @@ async function fetchWeather(cfg: Settings): Promise<Weather | null> {
     `&timezone=${encodeURIComponent(cfg.timezone)}&forecast_days=1`;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(WEATHER_TIMEOUT_MS) });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("weather fetch failed: HTTP", res.status, (await res.text()).slice(0, 200));
+      return null;
+    }
     const w = await res.json();
     return {
       fetched_at: new Date().toISOString(),
@@ -58,7 +61,8 @@ async function fetchWeather(cfg: Settings): Promise<Weather | null> {
       rain_pct: num(w.daily?.precipitation_probability_max?.[0]),
       weather_code: num(w.current?.weather_code),
     };
-  } catch {
+  } catch (e) {
+    console.error("weather fetch failed:", e instanceof Error ? e.message : String(e));
     return null;  // slow or down: the Hub gets the last known weather, or none
   }
 }
