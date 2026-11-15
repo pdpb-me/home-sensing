@@ -14,6 +14,6 @@ Design constraints:
 - The Hub makes one HTTPS call per wake: `sync` takes its reading and returns the bedroom's latest reading with its age, the latest message id, weather, and seconds to sleep. Keep the response small and flat so the firmware can parse it cheaply.
 - The Node sends samples with an age in seconds, not a timestamp.
 - Weather comes from Open-Meteo, called from the edge function, cached about 15 minutes, location configurable (default Milan). Check parameters against the Open-Meteo docs.
-- Messages are 1-bit 250x92 bitmaps (2,875 bytes packed).
+- Messages are 1-bit 250x92 bitmaps: rows padded to 32 bytes, most significant bit first, 1 = black, 2944 bytes, carried as base64 (3928 characters). `firmware/hub/screen.h` draws that format as it is.
 
 Never select or print `key_hash`, device keys or viewer emails. Report back the files you wrote, the exact SQL to be approved, and how to test each endpoint.
