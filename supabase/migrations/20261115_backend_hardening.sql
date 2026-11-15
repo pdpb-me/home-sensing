@@ -188,9 +188,13 @@ $$;
 
 -- ---------- 3. Exact bitmap size ----------
 -- 2944 bytes always encode to 3926 characters plus "==". The old check also let 2945 and 2946 bytes through.
+-- (As first applied this used '{3926}' in the pattern, which is above the repetition count Postgres allows
+-- and failed on every insert; the live database was corrected by the fix_bitmap_check migration. This file
+-- holds the corrected form.)
 
 alter table public.messages drop constraint messages_bitmap_check;
-alter table public.messages add constraint messages_bitmap_check check (bitmap ~ '^[A-Za-z0-9+/]{3926}==$');
+alter table public.messages add constraint messages_bitmap_check
+  check (length(bitmap) = 3928 and bitmap ~ '^[A-Za-z0-9+/]+==$');
 
 -- ---------- 5. Weather: keep the last good answer ----------
 
