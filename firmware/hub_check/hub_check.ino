@@ -2,7 +2,7 @@
 // Proves the I2C wiring, the SHT41, the display, the three keys and the battery sense pins.
 // Prints a report on Serial every 5 s; pressing a key redraws the display with the press counts.
 //
-// Board settings: XIAO_ESP32S3, USB CDC On Boot = Enabled, PSRAM = OPI.
+// Board settings: XIAO_ESP32S3_PLUS, USB CDC On Boot = Enabled, PSRAM = OPI.
 // Library: Seeed_GFX2 (from GitHub, not the Library Manager).
 //
 // Wiring: SHT41 VIN -> 3V3 header hole (VCC_3V3, switched on by the display library through GPIO43), GND -> GND, SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
@@ -30,16 +30,24 @@ bool displayOk = false;
 uint32_t lastReportMs = 0;
 
 // Presses are counted in interrupts, so none is missed while the display redraws (about 2.3 s)
+const uint32_t KEY_SETTLE_MS = 30;
 volatile uint32_t keyPresses[3] = {0, 0, 0};
-volatile uint32_t keyLastMs[3] = {0, 0, 0};
+volatile uint32_t keyChangedMs[3] = {0, 0, 0};
+volatile bool keyHeld[3] = {false, false, false};
 uint32_t shownPresses[3] = {0, 0, 0};
+const uint8_t KEY_INDEX[3] = {0, 1, 2};  // the handler gets a pointer: the core drops a null argument
 
+// Fires on both edges. A press counts once when the pin goes low from a settled released state;
+// edges within the settle time of the last accepted one are contact bounce.
 void IRAM_ATTR onKey(void* arg) {
-  int i = (int)(intptr_t)arg;
+  int i = *(const uint8_t*)arg;
   uint32_t now = millis();
-  if (now - keyLastMs[i] < 150) return;  // contact bounce
-  keyLastMs[i] = now;
-  keyPresses[i] = keyPresses[i] + 1;
+  if (now - keyChangedMs[i] < KEY_SETTLE_MS) return;
+  bool low = digitalRead(PIN_KEYS[i]) == LOW;
+  if (low == keyHeld[i]) return;
+  keyHeld[i] = low;
+  keyChangedMs[i] = now;
+  if (low) keyPresses[i] = keyPresses[i] + 1;
 }
 
 // High-precision measurement; false if the sensor doesn't answer or a checksum is wrong
@@ -130,20 +138,20 @@ void setup() {
   digitalWrite(PIN_BATTERY_ENABLE, LOW);
   Wire.begin(PIN_SDA, PIN_SCL);
 
+  // Seeed_GFX2 sets the reset pin up with gpio_set_direction() but pulses it with digitalWrite(), and the
+  // ESP32 core ignores digitalWrite() on a pin that never went through pinMode(). Without this the panel
+  // is never reset out of deep sleep, so every update after the first one times out (2 x 30 s).
+  // Before begin(), so the reset inside begin() works too when the panel is still asleep from the last run.
+  pinMode(PIN_PANEL_RESET, OUTPUT);
+  digitalWrite(PIN_PANEL_RESET, HIGH);
+
   displayOk = display.begin<Board_XIAO_ePaper_EE05, Config_Seeed_ePaper_2inch13_BW_SSD1680>();
   if (displayOk) display.setRotation(3);  // 250x122, long edge horizontal
   else Serial.println(display.lastResult().message);
 
-  // Seeed_GFX2 sets the reset pin up with gpio_set_direction() but pulses it with digitalWrite(), and the
-  // ESP32 core ignores digitalWrite() on a pin that never went through pinMode(). Without this the panel
-  // is never reset out of deep sleep, so every update after the first one times out (2 x 30 s).
-  pinMode(PIN_PANEL_RESET, OUTPUT);
-  digitalWrite(PIN_PANEL_RESET, HIGH);
-
-  // After the display is set up, in case the library reconfigures pins
   for (int i = 0; i < 3; i++) {
     pinMode(PIN_KEYS[i], INPUT);
-    attachInterruptArg(PIN_KEYS[i], onKey, (void*)(intptr_t)i, FALLING);
+    attachInterruptArg(PIN_KEYS[i], onKey, (void*)&KEY_INDEX[i], CHANGE);
   }
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
@@ -156,28 +164,18 @@ void setup() {
 void loop() {
   if (WIRING_TEST) {
     Wire.end();
-    pinMode(PIN_SDA, OUTPUT);
+    pinMode(PIN_SDA, INPUT_PULLUP);  // through the weak pull-up, so a wire shorted to GND does no harm
     pinMode(PIN_SCL, OUTPUT);
-    digitalWrite(PIN_SDA, HIGH);
     digitalWrite(PIN_SCL, LOW);
     Serial.println("Wiring test: SDA (GPIO5) held at 3.3 V, SCL (GPIO6) held at 0 V, 3V3 rail on");
     delay(2000);
     return;
   }
-  // Second, independent check: the pin level itself, in case the interrupts don't fire
-  static bool wasDown[3] = {false, false, false};
-  static uint32_t polledPresses[3] = {0, 0, 0};
   bool changed = false;
   for (int i = 0; i < 3; i++) {
-    bool down = digitalRead(PIN_KEYS[i]) == LOW;
-    if (down != wasDown[i]) {
-      wasDown[i] = down;
-      if (down) polledPresses[i]++;
-      Serial.printf("Key%d level went %s (polled presses %u, interrupt presses %u)\n", i + 1, down ? "LOW" : "high",
-                    (unsigned)polledPresses[i], (unsigned)keyPresses[i]);
-    }
-    uint32_t count = max(polledPresses[i], (uint32_t)keyPresses[i]);
+    uint32_t count = keyPresses[i];
     if (count == shownPresses[i]) continue;
+    Serial.printf("Key%d pressed (%u so far)\n", i + 1, (unsigned)count);
     shownPresses[i] = count;
     changed = true;
   }

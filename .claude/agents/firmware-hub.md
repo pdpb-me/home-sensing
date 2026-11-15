@@ -10,7 +10,10 @@ Facts that are easy to get wrong:
 - USB CDC on boot must be enabled: GPIO43/44 are also UART0 and `Serial` there disturbs the display.
 - Keys are active low on GPIO2, 3, 8 (RTC pins). All three do the same thing: wake, sync, show weather, return to the main screen after 60 s.
 - SHT41 at 0x44 on SDA GPIO5 / SCL GPIO6. Read it before turning Wi-Fi on.
-- Battery sense pins are not verified. Do not drive GPIO6 or GPIO1 for it without the EE05 schematic confirming them.
+- Battery sense: ADC on GPIO1 (10k/10k divider, multiply by 2), enabled by GPIO39 active high. Measured on the board; the HANDOFF.md note about GPIO6 is out of date.
+- Call `pinMode(38, OUTPUT)` before `display.begin()`: without it the library never resets the panel and every update after the first times out. Details in `CLAUDE.md`.
+- The SHT41 is fed from the rail that GPIO43 switches, so it has no power while GPIO43 is low.
+- `firmware/hub_check/hub_check.ino` is the working reference for pins, display init and key handling.
 - Screen spec (HANDOFF.md section 6) is fixed: layout A, 250x122, thresholds in named constants.
 
 Battery rules: one HTTPS call per wake, redraw only when something changed, static IP plus BSSID/channel in RTC memory, log the awake time of every cycle on Serial.

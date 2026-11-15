@@ -1,6 +1,6 @@
 # Home sensing
 
-Two battery devices and a web app. Full brief, screen spec, phases and decisions: **HANDOFF.md** (read it first; it wins over this file). Session state: **PROGRESS.md**.
+Two battery devices and a web app. Full brief, screen spec, phases and decisions: **HANDOFF.md** (read it first; on decisions and the screen spec it wins over this file). Session state: **PROGRESS.md**.
 
 ## Working with Pedro
 
@@ -38,21 +38,31 @@ Devices never talk to each other (no ESP-NOW, no gateway). Each uses home Wi-Fi 
 - Devices write through RPC `ingest(p_device_id, p_key, p_readings)` with the anon key plus a per-device secret (SHA-256 in `devices.key_hash`). Readings carry a Unix `ts`.
 - No edge functions exist yet. One device registered: `entrance`.
 
-## Hub hardware facts (verified on the board 2026-11-15)
+## Hub hardware facts (2026-11-15)
 
-- **Display reset bug:** Seeed_GFX2 configures the panel reset pin (GPIO38) with `gpio_set_direction()` but pulses it with `digitalWrite()`, which the ESP32 core ignores for pins that never went through `pinMode()`. The panel is then never woken from deep sleep and every update after the first times out (2 x 30 s). Fix: `pinMode(38, OUTPUT); digitalWrite(38, HIGH);` right after `display.begin()`. For the same reason `digitalRead()`/`digitalWrite()` on any pin the library owns (43, 44, 10, 38, 4) do nothing unless `pinMode()` was called first.
+Where this section and HANDOFF.md section 3 disagree on a pin that HANDOFF marks "to be confirmed", this section is newer.
+
+Measured on the board with `firmware/hub_check`:
+
+- **Display reset bug:** Seeed_GFX2 configures the panel reset pin (GPIO38) with `gpio_set_direction()` but pulses it with `digitalWrite()`, and the ESP32 core ignores `digitalWrite()` on a pin that never went through `pinMode()`. The panel is then never woken from deep sleep and every update after the first times out (2 x 30 s). Fix: `pinMode(38, OUTPUT); digitalWrite(38, HIGH);` **before** `display.begin()`. The same applies to any other pin the library sets up that way (43, 44, 10): `digitalWrite()` on them does nothing, and `digitalRead()` on GPIO43 returned 0 while the rail was on, so don't trust it.
 - Full update takes about 2.3 s and blocks. Read keys with interrupts, not polling.
-- Battery: ADC on GPIO1 through a 10k/10k divider (multiply by 2), enabled by **GPIO39** active high (EE05 schematic "ADC_EN"). Not GPIO6, which is free.
-- GPIO43 (PWR_EN) switches the `VCC_3V3` rail that feeds the panel **and** the 3V3 hole on the expansion header, so the SHT41 is only powered while GPIO43 is high. The library sets it high in `begin()` and leaves it there.
-- Expansion header holes (schematic J2/J4), counted from the USB end. Right row: VBUS, GND, VCC_3V3, GPIO11, GPIO12, GPIO13, NFC. Other row: GPIO5 (SDA), GPIO6 (SCL), PWR_EN, EDP_RES, ADC_EN, GPIO40, NFC. Pedro confirmed the 3V3 hole by measurement; the SHT41 answers at 0x44 on GPIO5/GPIO6.
-- Keys: GPIO2, GPIO3, GPIO8, active low, external 10k pull-ups and 100 nF. They bounce: a press and its release each fire a falling-edge interrupt (measured: 2 counts per press).
-- XIAO S3 Plus numbering: D11 = GPIO38, D12 = GPIO39, D13 = GPIO40, D14 = GPIO41, D15 = GPIO42, D16 = GPIO10.
-- Opening the serial port can reset the board (USB CDC), and reading the flash with esptool stalls at about 315 KB.
+- Battery: ADC on GPIO1, enabled by **GPIO39** active high; 2 x the pin voltage gave 4.02 V. Not compared against a multimeter yet. GPIO41 as enable gives 0.
+- SHT41 answers at 0x44 on GPIO5 (SDA) / GPIO6 (SCL), powered from the third hole of the right header row, which Pedro measured at 3.3 V.
+- Keys: GPIO2, GPIO3, GPIO8, active low. A press and its release each fire a falling edge (2 counts per press with a plain falling-edge counter), so debounce on level, as `hub_check` does.
+- Opening the serial port can reset the board (USB CDC), and reading the flash with esptool stalled twice at about 315 KB.
+
+From the EE05 schematic, not exercised yet:
+
+- GPIO43 (PWR_EN) switches the `VCC_3V3` rail that feeds the panel and that header hole, so the SHT41 should lose power when GPIO43 is low. The library sets it high in `begin()`.
+- Battery divider is 10k/10k behind a load switch; keys have 10k pull-ups to the always-on 3V3 and 100 nF.
+- Expansion header holes (J2/J4). Right row: VBUS, GND, VCC_3V3, GPIO11, GPIO12, GPIO13, NFC. Other row: GPIO5, GPIO6, PWR_EN, EDP_RES, ADC_EN, GPIO40, NFC. Which end is hole 1 is only confirmed for the right row.
+- Key wake from deep sleep is untested.
+- XIAO S3 Plus numbering (matches the core's variant file): D11 = GPIO38, D12 = GPIO39, D13 = GPIO40, D14 = GPIO41, D15 = GPIO42, D16 = GPIO10.
 
 ## Toolchain (verified 2026-11-15)
 
 - Arduino IDE 2 with bundled CLI: `%LOCALAPPDATA%\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` (not on PATH).
-- Core `esp32:esp32` 3.3.12 (Seeed_GFX2 does not compile on 3.0.7). Boards: `esp32:esp32:XIAO_ESP32C6`, `esp32:esp32:XIAO_ESP32S3_Plus` (what the Seeed wiki recommends for the EE05), `esp32:esp32:XIAO_ESP32S3`. Hub options: `CDCOnBoot=default,PSRAM=opi`.
+- Core `esp32:esp32` 3.3.12 (Seeed_GFX2 does not compile on 3.0.7). Boards: `esp32:esp32:XIAO_ESP32C6`, `esp32:esp32:XIAO_ESP32S3_Plus` (what the Seeed wiki recommends for the EE05), `esp32:esp32:XIAO_ESP32S3`. Hub FQBN: `esp32:esp32:XIAO_ESP32S3_Plus:CDCOnBoot=default,PSRAM=opi,PartitionScheme=default_8MB` (same partition layout as what is on the board now).
 - Libraries live in `%OneDrive%\Documents\Arduino\libraries`. Present: Seeed_GFX2 (git clone, needs `core.longpaths`), GxEPD2, Sensirion I2C SCD4x, Adafruit SHT4x.
 - Ports as confirmed by Pedro on 2026-11-15: COM4 = Hub, COM10 = Node.
 - No Supabase CLI, no Deno, no `gh`: admin installs are blocked on this laptop. Use the Supabase MCP tools.
