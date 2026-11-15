@@ -19,10 +19,11 @@ const int PIN_SCL = 6;
 const int PIN_KEYS[3] = {2, 3, 8};         // Key1, Key2, Key3: active low, 10k pull-ups on the board
 const int PIN_PANEL_POWER = 43;            // PWR_EN: switches VCC_3V3, which feeds the display and the 3V3 header hole
 const int PIN_BATTERY = 1;                 // BAT_ADC: VBAT through a 10k/10k divider
-const int PIN_BATTERY_ENABLE_A = 39;       // ADC_EN per the EE05 schematic's pin naming
-const int PIN_BATTERY_ENABLE_B = 41;       // ADC_EN if the other XIAO pin naming applies
+const int PIN_BATTERY_ENABLE = 39;         // ADC_EN, active high: connects the divider to the battery
 const uint8_t SHT41_ADDRESS = 0x44;
 const uint32_t REPORT_MS = 5000;
+// Wiring test: holds SDA at 3.3 V and SCL at 0 V so each wire can be checked with a multimeter at the sensor
+const bool WIRING_TEST = false;
 
 Seeed_GFX display;
 bool displayOk = false;
@@ -71,14 +72,14 @@ void scanI2c() {
   Serial.println(found ? "" : " none");
 }
 
-// Millivolts on the battery sense pin with the given enable pin high (-1 = none)
-uint32_t batterySenseMv(int enablePin) {
-  if (enablePin >= 0) digitalWrite(enablePin, HIGH);
+// The divider is only connected while the enable pin is high, so it draws nothing in between
+float readBatteryVolts() {
+  digitalWrite(PIN_BATTERY_ENABLE, HIGH);
   delay(20);
   uint32_t sum = 0;
   for (int i = 0; i < 16; i++) sum += analogReadMilliVolts(PIN_BATTERY);
-  if (enablePin >= 0) digitalWrite(enablePin, LOW);
-  return sum / 16;
+  digitalWrite(PIN_BATTERY_ENABLE, LOW);
+  return sum / 16 / 1000.0f * 2.0f;
 }
 
 void drawScreen(const char* line, float tempC, float humidity, bool shtOk) {
@@ -102,17 +103,13 @@ void drawScreen(const char* line, float tempC, float humidity, bool shtOk) {
 }
 
 void report() {
-  Serial.printf("3V3 rail enable (GPIO%d) reads %d before forcing it on\n", PIN_PANEL_POWER, digitalRead(PIN_PANEL_POWER));
   powerRailOn();
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   scanI2c();
   if (shtOk) Serial.printf("SHT41: T=%.2f C  RH=%.1f %%\n", t, h);
   else Serial.println("SHT41: no answer");
-  Serial.printf("Battery sense on GPIO%d: %u mV idle, %u mV with GPIO%d high, %u mV with GPIO%d high\n",
-                PIN_BATTERY, (unsigned)batterySenseMv(-1),
-                (unsigned)batterySenseMv(PIN_BATTERY_ENABLE_A), PIN_BATTERY_ENABLE_A,
-                (unsigned)batterySenseMv(PIN_BATTERY_ENABLE_B), PIN_BATTERY_ENABLE_B);
+  Serial.printf("Battery: %.2f V\n", readBatteryVolts());
   Serial.printf("Keys: %d %d %d (1 = pressed)   Display: %s\n", keyDown[0], keyDown[1], keyDown[2],
                 displayOk ? "ok" : "FAILED");
 }
@@ -123,10 +120,8 @@ void setup() {
   Serial.println("\nHub check starting");
 
   for (int pin : PIN_KEYS) pinMode(pin, INPUT);
-  pinMode(PIN_BATTERY_ENABLE_A, OUTPUT);
-  pinMode(PIN_BATTERY_ENABLE_B, OUTPUT);
-  digitalWrite(PIN_BATTERY_ENABLE_A, LOW);
-  digitalWrite(PIN_BATTERY_ENABLE_B, LOW);
+  pinMode(PIN_BATTERY_ENABLE, OUTPUT);
+  digitalWrite(PIN_BATTERY_ENABLE, LOW);
   Wire.begin(PIN_SDA, PIN_SCL);
 
   displayOk = display.begin<Board_XIAO_ePaper_EE05, Config_Seeed_ePaper_2inch13_BW_SSD1680>();
@@ -137,12 +132,23 @@ void setup() {
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   uint32_t startedMs = millis();
-  drawScreen("Press a key", t, h, shtOk);
+  drawScreen(WIRING_TEST ? "SDA 3.3V SCL 0V" : "Press a key", t, h, shtOk);
   Serial.printf("Display update took %u ms\n", (unsigned)(millis() - startedMs));
   report();
 }
 
 void loop() {
+  if (WIRING_TEST) {
+    Wire.end();
+    powerRailOn();
+    pinMode(PIN_SDA, OUTPUT);
+    pinMode(PIN_SCL, OUTPUT);
+    digitalWrite(PIN_SDA, HIGH);
+    digitalWrite(PIN_SCL, LOW);
+    Serial.println("Wiring test: SDA (GPIO5) held at 3.3 V, SCL (GPIO6) held at 0 V, 3V3 rail on");
+    delay(2000);
+    return;
+  }
   for (int i = 0; i < 3; i++) {
     bool down = digitalRead(PIN_KEYS[i]) == LOW;
     if (down == keyDown[i]) continue;
