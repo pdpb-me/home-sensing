@@ -8,6 +8,8 @@ Updated: 2026-11-15 (evening) · Working branch: `hub-node`
 
 **Hub firmware is `hub 0.5` since 19:48 on 2026-11-15**: at Pedro's request a second key press during the weather view puts the message back at once instead of after 60 s (a change to HANDOFF.md section 5, "Tasti"; that wake does not sync). Flashed and reporting; the key behaviour itself still has to be tried by Pedro. The evening run for Phase 5 counts from 19:48.
 
+**External push button on the Hub** (Pedro's request, for the printed shell; wiring beyond HANDOFF.md): between GND and GPIO11, which is the **6th** hole of the right header row (measured; the first try on the 4th hole failed because the pin order was read backwards). Firmware `hub 0.6` wakes on it like on the three keys, with the chip's pull-up kept on in sleep. Pedro confirmed on a breadboard that it works. The Phase 5 evening run counts from 20:17, when the Hub was powered up again. Local commits only.
+
 **Rooms tab side by side** (Pedro's request): Camera and Salotto share the tab, one small screen each, both values per row, one plot per room. Published at 19:59 (`main` = `4827afd`); Pedro looked at it on his phone and said it looks good.
 
 **Phase 6 met its exit criterion** at about 19:40: Pedro sent messages from his phone (ids 13 and 14), saw them on the Hub, and the first was marked seen at 19:40:53, which he saw in the web app. It needs his word to close. What follows is how it got there.
