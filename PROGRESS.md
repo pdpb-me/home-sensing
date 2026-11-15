@@ -30,7 +30,10 @@ Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgo
 - Battery reading not compared with a multimeter (Phase 7). Not exercised: SHT41 losing power when GPIO43 is low, key wake from deep sleep.
 - `supabase/schema.sql` still describes the old schema.
 - Device keys for `bedroom` and `living` are not generated yet (needed in Phases 4 and 5).
-- The Phase 3 SQL and edge function have not been through the reviewer agent yet.
+- Reviewer pass on the backend done. Its fixes are written but NOT applied: `supabase/migrations/20261115_backend_hardening.sql` and a new `sync` (repo version is ahead of the deployed version 3). Waiting for Pedro's ok.
+- The live dashboard now lists three devices and opens on `Camera`, which has no readings yet (it picks the first by name). Pedro has to choose Entrance from the list until the dashboard is changed (Phase 6, or a small fix pushed to main with his ok).
+- For the Node and Hub firmware: a non-200 answer has no `sleep`, so fall back to a default interval; never retry a rejected batch for ever; check the decoded bitmap is exactly 2944 bytes before copying it.
+- HANDOFF.md section 5 still says the edge function calls Open-Meteo; the database does now.
 
 ## Notes
 
@@ -40,10 +43,10 @@ Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgo
 
 ## Next step
 
-Reviewer pass on the backend, then Phase 4 (Node firmware): single-shot SCD41 every 5 minutes, batch upload through `ingest_node`, deep sleep. Needs a device key for `bedroom` and Wi-Fi credentials in a git-ignored `secrets.h`.
+Apply the backend hardening once Pedro agrees, then Phase 4 (Node firmware): single-shot SCD41 every 5 minutes, batch upload through `ingest_node`, deep sleep. Needs a device key for `bedroom` and Wi-Fi credentials in a git-ignored `secrets.h`.
 
 ## Needed from Pedro
 
-- Ok to close Phase 3.
+- Ok to apply the backend hardening, then to close Phase 3.
 - What happens to `entrance`: does it stay, or did its hardware move to the Node?
 - `HANDOFF.md` and `Hardware/` are not in git: should they go in the (public) repo or stay local?

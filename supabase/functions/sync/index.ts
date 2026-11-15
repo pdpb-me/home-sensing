@@ -19,6 +19,7 @@
 //     "msg": 12, "bmp": "<base64, 3928 chars>",           // bmp only when msg differs from "have"; msg null = none
 //     "wn": 9.4, "wx": 9.5, "wr": 60, "wc": 2,            // outside now, today's max, rain %, WMO code; null if unknown or too old
 //     "place": "MILANO", "sleep": 300 }                   // seconds to sleep before the next sync
+// Any other status carries { "error": "..." } and no "sleep": the Hub then uses its own default.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 function secretKey(): string {
@@ -36,7 +37,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const int = (v: unknown) => (typeof v === "number" && Number.isInteger(v) ? v : null);
+const int = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 
 type Settings = {
   place_name: string; timezone: string;
@@ -44,16 +45,41 @@ type Settings = {
 };
 type Weather = { fetched_at: string | null; now_c: number | null; max_c: number | null; rain_pct: number | null; weather_code: number | null };
 
-// "HH:MM:SS" -> minutes since midnight
-const minutes = (hms: string) => Number(hms.slice(0, 2)) * 60 + Number(hms.slice(3, 5));
+// Used if the settings row is missing, so a mistake there can't stop the Hub from syncing
+const DEFAULTS: Settings = {
+  place_name: "MILANO", timezone: "Europe/Rome",
+  day_starts: "07:00:00", night_starts: "23:30:00", day_sleep_s: 300, night_sleep_s: 1800, weather_max_age_s: 10800,
+};
+const MIN_SLEEP_S = 60;
 
+// "HH:MM:SS" -> seconds since midnight
+const seconds = (hms: string) => Number(hms.slice(0, 2)) * 3600 + Number(hms.slice(3, 5)) * 60;
+
+// Seconds since local midnight in the given timezone; an invalid timezone falls back to the default one
+function localSeconds(timezone: string, now: Date): number {
+  const read = (tz: string) => {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+      .formatToParts(now);
+    const part = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+    return part("hour") * 3600 + part("minute") * 60 + part("second");
+  };
+  try {
+    return read(timezone);
+  } catch {
+    console.error("invalid timezone in hub_settings:", timezone);
+    return read(DEFAULTS.timezone);
+  }
+}
+
+// The day or night interval, cut short when the other period starts first: a sync at 06:59 on the
+// night interval would otherwise leave the screen untouched until 07:29.
 function sleepSeconds(cfg: Settings, now: Date): number {
-  const local = new Intl.DateTimeFormat("en-GB", { timeZone: cfg.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-    .formatToParts(now);
-  const at = Number(local.find((p) => p.type === "hour")!.value) * 60 + Number(local.find((p) => p.type === "minute")!.value);
-  const day = minutes(cfg.day_starts), night = minutes(cfg.night_starts);
+  const at = localSeconds(cfg.timezone, now);
+  const day = seconds(cfg.day_starts), night = seconds(cfg.night_starts);
   const isDay = day <= night ? at >= day && at < night : at >= day || at < night;
-  return isDay ? cfg.day_sleep_s : cfg.night_sleep_s;
+  const interval = isDay ? cfg.day_sleep_s : cfg.night_sleep_s;
+  const untilChange = ((isDay ? night : day) - at + 86400) % 86400;
+  return Math.max(MIN_SLEEP_S, untilChange > 0 ? Math.min(interval, untilChange) : interval);
 }
 
 Deno.serve(async (req) => {
@@ -82,7 +108,7 @@ Deno.serve(async (req) => {
     return json({ error: "database error" }, 500);
   }
 
-  const cfg = data.settings as Settings;
+  const cfg: Settings = { ...DEFAULTS, ...(data.settings ?? {}) };
   const stored = data.weather as Weather | null;
   // Yesterday's weather shown as "now" would be worse than none
   const fresh = stored?.fetched_at && Date.now() - Date.parse(stored.fetched_at) <= cfg.weather_max_age_s * 1000;

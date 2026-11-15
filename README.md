@@ -31,7 +31,7 @@ Sensor node (XIAO ESP32-S3) --Wi-Fi--> Supabase (database + login) <-- Dashboard
 
 ## Setup
 
-1. Run `supabase/schema.sql` in the Supabase SQL Editor (fresh project). Existing projects apply `supabase/migrations/` instead.
+1. Fresh project: run `supabase/schema.sql` in the Supabase SQL Editor, then the files in `supabase/migrations/` dated 2026-11-15 or later, in order. An existing project applies only the migrations it doesn't have yet.
 2. Register each node: insert into `devices` its id, name and the SHA-256 hash of a random key.
 3. Copy `firmware/home_sensor/secrets.example.h` to `secrets.h` and fill it in (Wi-Fi, Supabase URL + publishable key, device id + key).
 

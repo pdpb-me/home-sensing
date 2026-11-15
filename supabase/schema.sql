@@ -1,5 +1,7 @@
 -- Home sensing: database setup.
 -- Paste into Supabase > SQL Editor > New query, then Run. Safe to run once on a fresh project.
+-- This file is the starting point only (the first node). After it, run the files in migrations/ dated
+-- 2026-11-15 or later, in order: they add the Hub and Node devices, messages, weather and tighter access.
 --
 -- Security model:
 --   * Sensor nodes never touch tables directly. They call ingest() with their own secret key,
