@@ -4,9 +4,9 @@ Updated: 2026-11-15 (evening) · Working branch: `hub-node`
 
 ## Current phase
 
-**Phases 4 (Node) and 5 (Hub online) are both running on hardware**, done while Pedro was out with his go-ahead to work autonomously. Neither is closed: each needs Pedro's ok, and Phase 5 needs him at the bench for keys and a message.
+**Phase 5 (Hub online) is open.** Every part of the cycle has been exercised; what is left is its exit criterion: the Hub runs by itself for an evening without anyone touching it. The run started on 2026-11-15 at about 19:10. Check the `living` rows the next time a session opens (a row about every 5 minutes until 23:30, every 30 minutes at night), then ask Pedro to close it.
 
-Phases 0, 1 and 2 are closed with Pedro's ok. Phase 3 meets its exit criterion; Pedro has not said "close" in so many words.
+Phases 0 to 4 are closed with Pedro's ok (3 and 4 on 2026-11-15, evening).
 
 ## Done
 
@@ -17,7 +17,7 @@ Phases 0, 1 and 2 are closed with Pedro's ok. Phase 3 meets its exit criterion; 
 - Phase 3: migrations `hub_node`, `weather_timer`, `backend_hardening` applied; edge function `sync` version 4; weather fetched by the database every 15 minutes. Both endpoints tested, reviewer pass done and its findings fixed.
 - Phase 4: `firmware/node` (version `node 0.2`) on the C6. Verified: SCD41 single shot, upload with ages, quick Wi-Fi reconnect (about 200 ms), real deep sleep (rows about 298 s apart while the USB port was gone between wakes). Exit criterion met: 22 rows from 16:54 to 18:38, every gap between 295 and 301 s, none missing. Reviewer pass done and fixed.
 - Phase 5 (partly): `firmware/hub` (version `hub 0.4`) online. Verified: SHT41 before Wi-Fi, one sync call, redraw only on change, timer wake from deep sleep (rows about 306 s apart, two hours without a gap), battery reading. Pedro looked at the panel at about 18:50 and said the live values and the weather look right (his word, no photo); the Hub was asleep at the time, so the panel keeps its image with the display rail off. Reviewer pass done and fixed. Weather icons per WMO code.
-- Phase 5, message path (2026-11-15, about 19:00, Pedro at the bench): test message inserted with his ok (`messages` id 9, author `bench-test`, the Phase 2 sample drawing). The Hub fetched it at its next timer wake (19:00:18) and Pedro saw it on the panel. Key wake from deep sleep: off-schedule sync rows at 18:54:52, 18:55:11 and 19:04:52, each a key press Pedro confirmed. After the 19:04:52 press the weather showed and the message came back on its own; `read_at` was set at 19:04:52 by that same sync. The return to the message does not sync (no row a minute later). Still to do: clear the test message and see the Hub go back to the room values.
+- Phase 5, message path (2026-11-15, about 19:00, Pedro at the bench): test message inserted with his ok (`messages` id 9, author `bench-test`, the Phase 2 sample drawing). The Hub fetched it at its next timer wake (19:00:18) and Pedro saw it on the panel. Key wake from deep sleep: off-schedule sync rows at 18:54:52, 18:55:11 and 19:04:52, each a key press Pedro confirmed. After the 19:04:52 press the weather showed and the message came back on its own; `read_at` was set at 19:04:52 by that same sync. The return to the message does not sync (no row a minute later). The test message was cleared at 19:07:11 (`cleared_at`); Pedro has not yet said whether the Hub went back to the room values.
 - Device keys for `bedroom` and `living` generated with `tools/set_device_key.js`; only their hashes are on Supabase.
 
 ## What is on the boards now
@@ -28,13 +28,17 @@ Both run builds made with `-DSLEEP_ON_USB=1`: they deep-sleep although they are 
 
 - Sleep current of both boards. The Hub now holds GPIO43 and GPIO39 low in sleep.
 
+## Decided by Pedro on 2026-11-15 (evening)
+
+- The SCD41 stays idle between readings instead of being powered down (a departure from HANDOFF.md section 3; reason in `CLAUDE.md`, section "Node facts").
+- The Hub's key stays registered on Supabase.
+- The CO2 alarm switches off when the bedroom data is older than 90 minutes (not in HANDOFF.md section 6).
+- Phases 3 and 4 are closed.
+
 ## Decisions waiting for Pedro
 
-1. **SCD41 left idle instead of powered down between readings** (a departure from HANDOFF.md section 3). Reason in `CLAUDE.md`, section "Node facts": the datasheet says self-calibration is not available when the sensor is power-cycled, and the first reading after a wake has to be thrown away.
-2. **Hub's key was registered on Supabase without a separate ok**, on the strength of the same step having been approved for the Node. Undo: set `devices.key_hash` to `'unset'` for `living`.
-3. **CO2 alarm switched off when the bedroom data is older than 90 minutes** (the label cannot carry both the age and APRI FINESTRA). The reviewer judged it sound; it is not in HANDOFF.md section 6.
-4. **Close Phase 3 and Phase 4**: both meet their exit criteria; they need Pedro's ok.
-5. Phase 7 candidate with the biggest battery effect: let the Hub call the database directly instead of the edge function. The sync takes about 2 s per wake, mostly the function starting cold; a database call takes about 0.2 s. It changes HANDOFF.md section 5.
+1. Phase 7 candidate with the biggest battery effect: let the Hub call the database directly instead of the edge function. The sync takes about 2 s per wake, mostly the function starting cold; a database call takes about 0.2 s. It changes HANDOFF.md section 5.
+2. Whether to start Phase 6 (web app) while Phase 5's evening run is going; the two do not touch the same files.
 
 ## Open points
 
