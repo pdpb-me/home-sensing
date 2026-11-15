@@ -22,7 +22,6 @@ Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgo
 
 ## Open points
 
-- Low-battery band covers the message signature. Pedro to decide.
 - "APRI FINESTRA" is drawn in regular weight: bold does not fit the column.
 - If bedroom data is stale while the CO2 alarm is latched, the screen keeps APRI FINESTRA and hides the age. Suggest dropping the alarm on stale data (Phase 5).
 - Weather icon is always rain; icons per WMO code come with live weather (Phase 5).
@@ -31,7 +30,7 @@ Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgo
 - `supabase/schema.sql` still describes the old schema.
 - Device keys for `bedroom` and `living` are not generated yet (needed in Phases 4 and 5).
 - Reviewer pass on the backend done. Its fixes are written but NOT applied: `supabase/migrations/20261115_backend_hardening.sql` and a new `sync` (repo version is ahead of the deployed version 3). Waiting for Pedro's ok.
-- The live dashboard now lists three devices and opens on `Camera`, which has no readings yet (it picks the first by name). Pedro has to choose Entrance from the list until the dashboard is changed (Phase 6, or a small fix pushed to main with his ok).
+- The live dashboard now lists three devices and opens on `Camera`, which has no readings until the Node uploads (it picks the first by name). The old readings are under Entrance in the list.
 - For the Node and Hub firmware: a non-200 answer has no `sleep`, so fall back to a default interval; never retry a rejected batch for ever; check the decoded bitmap is exactly 2944 bytes before copying it.
 - HANDOFF.md section 5 still says the edge function calls Open-Meteo; the database does now.
 
@@ -39,7 +38,10 @@ Open-Meteo refuses requests from Supabase edge functions (HTTP 429, shared outgo
 
 - The only battery Pedro has is on the Hub. The Node runs from USB until a second one arrives.
 - Pedro switched the conversation to English on 2026-11-15.
-- The `entrance` node has not uploaded since 2026-11-14 21:29 UTC; its 4112 readings are untouched.
+- The `entrance` node is retired (Pedro, 2026-11-15). It stopped uploading on 2026-11-14 21:29 UTC; its 4112 readings stay as history.
+- Decided by Pedro on 2026-11-15: the low-battery band may cover the message signature; `HANDOFF.md` and `Hardware/` stay local (they are git-ignored now).
+- `firmware/node/secrets.h` exists (git-ignored): Wi-Fi and Supabase lines copied from the old node's file by `tools/make_node_secrets.js` without showing them; `DEVICE_KEY` is still a placeholder.
+- The Node is on COM10 (ESP32-C6, confirmed with esptool).
 
 ## Next step
 
@@ -47,6 +49,4 @@ Apply the backend hardening once Pedro agrees, then Phase 4 (Node firmware): sin
 
 ## Needed from Pedro
 
-- Ok to apply the backend hardening, then to close Phase 3.
-- What happens to `entrance`: does it stay, or did its hardware move to the Node?
-- `HANDOFF.md` and `Hardware/` are not in git: should they go in the (public) repo or stay local?
+- Ok to apply the backend hardening and to store the Node's key hash, then to close Phase 3.

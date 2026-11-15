@@ -20,3 +20,7 @@ desktop.ini
 # PC tools
 node_modules/
 tools/hub_screen/out/
+
+# Local only: the project brief and reference files stay off the public repo
+HANDOFF.md
+Hardware/
