@@ -46,10 +46,10 @@
     .detail { display: flex; }
   }
 
-  .twin { position: relative; background: var(--panel); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 20px; display: flex; justify-content: center; }
+  .twin { position: relative; background: var(--panel); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 20px; display: flex; justify-content: center; gap: 10px; }
   .twin::after { content: ""; position: absolute; top: 0; right: 0; width: 72px; height: 12px; border-top-right-radius: 10px; background: repeating-conic-gradient(#16140f 0 25%, #f2c14e 0 50%) 0 0 / 8px 8px; }
   .screen { width: 220px; height: 220px; background: #e6e5dc; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
-  .screen-top { display: flex; justify-content: center; align-items: center; gap: 90px; height: 25px; flex: none; border-bottom: 2px solid var(--ink); }
+  .screen-top { display: flex; justify-content: center; align-items: center; gap: 8px; height: 25px; flex: none; border-bottom: 2px solid var(--ink); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
   .screen-temp { font-size: 48px; font-weight: 700; line-height: 1; text-align: center; padding: 10px 0 8px; margin: 0 10px; border-bottom: 2px solid var(--ink); }
   .screen-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-grow: 1; align-items: center; text-align: center; }
   .screen-row > div + div { border-left: 2px solid var(--ink); }
@@ -57,6 +57,12 @@
   .screen-row b { display: block; font-size: 30px; line-height: 1.1; }
   .screen-air { font-size: 20px; font-weight: 700; text-align: center; padding: 6px 0 11px; flex: none; }
   .screen-air.poor { background: var(--ink); color: #e6e5dc; }
+  /* Several rooms next to each other: the same screens, smaller */
+  .twin.multi { padding: 14px; }
+  .twin.multi .screen { width: auto; flex: 1 1 0; min-width: 0; max-width: 220px; height: 172px; border-radius: 12px; }
+  .twin.multi .screen-temp { font-size: 30px; padding: 9px 0 7px; margin: 0 8px; }
+  .twin.multi .screen-row b { font-size: 22px; }
+  .twin.multi .screen-air { font-size: 15px; padding: 4px 0 8px; }
 
   .rows { display: flex; flex-direction: column; gap: 10px; }
   .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 62px; padding: 8px 12px; text-align: left; border-radius: 10px; box-shadow: 2px 2px 0 var(--ink); font-weight: 500; }
@@ -67,6 +73,10 @@
   .row .sub { display: block; font: 400 13px var(--mono); margin-top: 3px; }
   .row .end { display: flex; align-items: center; gap: 8px; flex: none; }
   .row .value { font: 500 28px/1 var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
+  .row .vals { display: flex; gap: 14px; }
+  .row .val { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .row .val small { font: 400 11px/1 var(--mono); color: var(--muted); }
+  .row .vals.multi .value { font-size: 23px; }
   .row .mark { font: 700 16px var(--mono); width: 12px; }
   .chip { font-size: 13px; font-weight: 700; padding: 1px 8px; border: 2px solid var(--ink); border-radius: 5px; }
   .good { background: var(--good); }
@@ -88,12 +98,15 @@
   .bar.picked span { outline: 2px solid var(--ink); }
   .limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--ink); pointer-events: none; }
   .limit span { position: absolute; right: 0; top: -15px; font: 500 11px var(--mono); background: var(--card); padding: 0 2px; }
+  .plot-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; font: 500 13px var(--mono); margin: 10px 0 6px; }
+  .plot-head b { font-weight: 700; }
+  #plots.multi .plot-wrap { --plot: 120px; }
+  @media (min-width: 900px) { #plots.multi .plot-wrap { --plot: 170px; } }
   .x-axis { display: flex; justify-content: space-between; padding-left: 46px; font: 400 12px var(--mono); color: var(--muted); }
   .chart-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 14px; font-weight: 700; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 12px; height: 12px; border: 2px solid var(--ink); }
-  #stats { font: 500 13px var(--mono); margin: 0; }
 
   .panel { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); padding: 24px; max-width: 420px; margin: 12vh auto 0; }
   .panel h1 { margin-bottom: 8px; }
@@ -165,28 +178,8 @@
     <div id="view-rooms">
     <div class="layout">
       <div class="side">
-        <!-- A copy of the node's e-paper screen, drawn from the latest reading -->
-        <div class="twin">
-          <div class="screen" role="img" id="screen" aria-label="Latest reading, as on the device">
-            <div class="screen-top">
-              <svg width="20" height="16" viewBox="0 0 24 19" fill="none" stroke="#16140f" stroke-width="2.5" aria-hidden="true">
-                <path d="M2 7 A14 14 0 0 1 22 7"/><path d="M6.5 11.5 A8 8 0 0 1 17.5 11.5"/><rect x="10.5" y="15" width="3" height="3" fill="#16140f" stroke="none"/>
-                <g id="t-offline" hidden><path d="M2 18 L22 1" stroke="#e6e5dc" stroke-width="5"/><path d="M2 18 L22 1"/></g>
-              </svg>
-              <svg id="t-batt" width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="#16140f" stroke-width="2" aria-hidden="true">
-                <rect x="1" y="1" width="23" height="12"/><rect x="25" y="4" width="3" height="6" fill="#16140f" stroke="none"/>
-                <rect id="t-fill" x="3" y="3" width="0" height="8" fill="#16140f" stroke="none"/>
-                <path id="t-bolt" d="M15 2 L9 8 H13 L11 12 L17 6 H13 Z" fill="#16140f" stroke="none" hidden/>
-              </svg>
-            </div>
-            <div class="screen-temp" id="t-temp">--</div>
-            <div class="screen-row" id="t-row">
-              <div><span id="t-hum-word">--</span><b id="t-hum">--</b></div>
-              <div id="t-co2-cell"><span>CO2</span><b id="t-co2">--</b></div>
-            </div>
-            <div class="screen-air" id="t-air">Air --</div>
-          </div>
-        </div>
+        <!-- One small screen per room, drawn from its latest reading -->
+        <div class="twin" id="twin"></div>
 
         <div class="rows" id="rows"></div>
       </div>
@@ -204,15 +197,12 @@
         <button data-range="30d">30 days</button>
         <button data-range="1y">1 year</button>
       </div>
-      <div class="readout"><span id="readout-time"></span><b id="readout-value"></b></div>
-      <div class="plot-wrap">
-        <div class="y-axis"><span id="y-hi"></span><span id="y-mid"></span><span id="y-lo"></span></div>
-        <div class="plot" id="plot"></div>
-      </div>
+      <div class="readout"><span id="readout-time"></span></div>
+      <!-- One plot per room that measures the selected reading, on the same scale -->
+      <div id="plots"></div>
       <div class="x-axis"><span id="x-start"></span><span id="x-mid"></span><span>Now</span></div>
       <div class="chart-foot">
         <div class="legend" id="legend"></div>
-        <p id="stats"></p>
       </div>
     </div>
     </div>
@@ -294,7 +284,7 @@ const REFRESH_MS = 60e3;
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const state = { view: "rooms", refreshes: 0, device: null, devices: [], names: {}, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
+const state = { view: "rooms", refreshes: 0, rooms: [], data: [], groups: [], devices: [], names: {}, metric: "co2_ppm", range: "24h", rows: [], picked: null, started: false };
 const wide = window.matchMedia("(min-width: 900px)");
 
 // ---------- Auth ----------
@@ -354,11 +344,15 @@ async function startApp() {
     return showBanner(`Signed in as ${data.user?.email}, but this account has no access. Add the email to the viewers table in Supabase.`);
   }
 
-  // The room with the CO2 sensor comes first, a retired device last
+  // The rooms in use are shown together, side by side. A retired device keeps its history on a page of its own.
+  const current = state.devices.filter((d) => d.kind !== "legacy");
+  const alone = current.length ? state.devices.filter((d) => d.kind === "legacy") : state.devices;
+  state.groups = alone.map((d) => ({ label: d.name, ids: [d.id] }));
+  if (current.length) state.groups.unshift({ label: current.length > 1 ? "All rooms" : current[0].name, ids: current.map((d) => d.id) });
   const select = $("device");
-  select.innerHTML = state.devices.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
-  select.addEventListener("change", () => { state.device = select.value; state.picked = null; refresh(); });
-  state.device = state.devices[0].id;
+  select.innerHTML = state.groups.map((g, i) => `<option value="${i}">${esc(g.label)}</option>`).join("");
+  select.addEventListener("change", () => { state.rooms = state.groups[select.value].ids; state.picked = null; showView("rooms"); });
+  state.rooms = state.groups[0].ids;
 
   initControls();
   initEditor();
@@ -372,18 +366,18 @@ function showView(view) {
   state.view = view;
   for (const v of ["rooms", "message", "devices"]) $("view-" + v).hidden = v !== view;
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
-  $("device").hidden = view !== "rooms" || state.devices.length < 2;
+  $("device").hidden = view !== "rooms" || state.groups.length < 2;
   $("status").hidden = view !== "rooms";
-  $("room-title").textContent = VIEW_TITLES[view] || state.names[state.device];
+  $("room-title").textContent = VIEW_TITLES[view] || (state.rooms.length > 1 ? "Rooms" : state.names[state.rooms[0]]);
   if (view === "message") openEditor();
   refresh();
 }
 
-async function bucketed(rangeKey) {
+async function bucketed(device, rangeKey) {
   const r = RANGES[rangeKey];
   const to = new Date();
   const { data, error } = await db.rpc("readings_bucketed", {
-    p_device_id: state.device,
+    p_device_id: device,
     p_from: new Date(to - r.ms).toISOString(),
     p_to: to.toISOString(),
     p_bucket: r.bucket,
@@ -413,17 +407,19 @@ async function refresh() {
 }
 
 async function refreshRoom(isLatest) {
-  const [latestRes, day, rows] = await Promise.all([
-    db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
-      .eq("device_id", state.device).order("ts", { ascending: false }).limit(1),
-    bucketed("24h"),
-    state.range === "24h" ? null : bucketed(state.range),
-  ]);
-  if (latestRes.error) throw latestRes.error;
-  if (!isLatest()) return;  // the tab or the room changed while this was loading
-  $("room-title").textContent = state.names[state.device];
-  renderRows(latestRes.data[0], day);
-  state.rows = rows || day;
+  const data = await Promise.all(state.rooms.map(async (id) => {
+    const [latestRes, day, rows] = await Promise.all([
+      db.from("readings").select("ts, temp_c, humidity, co2_ppm, battery_v, battery_pct, charging")
+        .eq("device_id", id).order("ts", { ascending: false }).limit(1),
+      bucketed(id, "24h"),
+      state.range === "24h" ? null : bucketed(id, state.range),
+    ]);
+    if (latestRes.error) throw latestRes.error;
+    return { id, name: state.names[id], latest: latestRes.data[0], day, rows: rows || day };
+  }));
+  if (!isLatest()) return;  // the tab or the rooms changed while this was loading
+  state.data = data;
+  renderRows();
   renderChart();
 }
 
@@ -447,31 +443,44 @@ function ago(ms) {
   return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
-function renderRows(latest, day) {
-  // A room only gets the rows its device measures: the Hub has no CO2 sensor, the Node no battery reading
-  const measured = Object.keys(METRICS).filter((key) => has(latest?.[key]) || day.some((r) => has(r[key])));
+// Whether a room's device reports this reading at all: the Hub has no CO2 sensor, the Node no battery reading
+const measures = (room, key) => has(room.latest?.[key]) || room.day.some((r) => has(r[key]));
+const LEVELS = ["good", "fair", "poor"];
+
+function renderRows() {
+  const rooms = state.data;
+  const multi = rooms.length > 1;
+  const measured = Object.keys(METRICS).filter((key) => rooms.some((room) => measures(room, key)));
   const keys = measured.length ? measured : Object.keys(METRICS);
   if (!keys.includes(state.metric)) state.metric = keys[0];
   const html = keys.map((key) => {
     const m = METRICS[key];
-    const value = latest?.[key];
-    let chip = has(value) ? m.rate(value) : null;
+    const shown = rooms.filter((room) => measures(room, key));
+    const cols = shown.length ? shown : rooms;
+    // With several rooms the chip tells about the one that needs attention most
+    let chip = null;
+    for (const room of cols) {
+      const rated = has(room.latest?.[key]) ? m.rate(room.latest[key]) : null;
+      if (rated && (!chip || LEVELS.indexOf(rated[0]) > LEVELS.indexOf(chip[0]))) chip = rated;
+    }
     let sub = "No data in the last 24 h";
-    const values = day.map((r) => r[key]).filter(has);
+    const values = cols.flatMap((room) => room.day.map((r) => r[key])).filter(has);
     if (values.length) sub = `24 h: ${fmt(Math.min(...values), key)} – ${fmt(Math.max(...values), key)}`;
     if (key === "co2_ppm" && chip?.[0] === "poor") sub = "Open the window";
-    if (key === "battery_pct") {
+    if (key === "battery_pct" && !multi) {
+      const latest = cols[0].latest;
       if (latest?.charging) chip = ["good", "Charging"];
       if (has(latest?.battery_v)) sub = Number(latest.battery_v).toFixed(2) + " V";
     }
     const on = key === state.metric;
     const mark = wide.matches ? (on ? "▸" : "") : (on ? "▾" : "▸");
+    const vals = cols.map((room) => `<span class="val">${multi ? `<small>${esc(room.name)}</small>` : ""}<span class="value">${fmt(room.latest?.[key], key)}</span></span>`).join("");
     return `<button class="row${on ? " on" : ""}" data-metric="${key}" aria-expanded="${on}">
       <span class="text">
         <span class="head"><span class="label">${m.label}</span>${chip ? `<span class="chip ${chip[0]}">${chip[1]}</span>` : ""}</span>
         <span class="sub">${sub}</span>
       </span>
-      <span class="end"><span class="value">${has(value) ? fmt(value, key) : "--"}</span><span class="mark" aria-hidden="true">${mark}</span></span>
+      <span class="end"><span class="vals${multi ? " multi" : ""}">${vals}</span><span class="mark" aria-hidden="true">${mark}</span></span>
     </button>`;
   }).join("");
   // The chart may be sitting inside the rows, so it is taken out before they are replaced
@@ -479,18 +488,21 @@ function renderRows(latest, day) {
   $("rows").innerHTML = html;
   placeChart();
 
+  $("twin").classList.toggle("multi", multi);
+  $("twin").innerHTML = rooms.map((room) => screenHtml(room, multi)).join("");
+
+  // The line at the top follows the room heard from most recently
+  const times = rooms.filter((room) => room.latest).map((room) => new Date(room.latest.ts).getTime());
   const status = $("status");
-  if (!latest) {
+  if (!times.length) {
     status.className = "status stale";
     $("status-text").textContent = "No readings yet";
-    renderScreen(null, true, true);
     return;
   }
-  const age = Date.now() - new Date(latest.ts);
+  const age = Date.now() - Math.max(...times);
   const stale = age > OFFLINE_AFTER_MS;
   status.className = stale ? "status stale" : "status";
   $("status-text").textContent = (stale ? "Offline · last seen " : "Updated ") + ago(age);
-  renderScreen(latest, stale, keys.includes("co2_ppm"));
 }
 
 function placeChart() {
@@ -499,26 +511,39 @@ function placeChart() {
   else $("rows").querySelector(`[data-metric="${state.metric}"]`).after(box);
 }
 
-// withCo2 is false for a room whose device has no CO2 sensor: its screen then leaves that part out
-function renderScreen(r, stale, withCo2) {
-  $("t-row").classList.toggle("single", !withCo2);
-  $("t-co2-cell").hidden = !withCo2;
-  $("t-air").hidden = !withCo2;
-  $("t-temp").textContent = has(r?.temp_c) ? Number(r.temp_c).toFixed(1) + "°C" : "--";
-  $("t-hum").textContent = has(r?.humidity) ? Math.round(r.humidity) + "%" : "--";
-  $("t-hum-word").textContent = has(r?.humidity) ? METRICS.humidity.rate(r.humidity)[1] : "--";
-  $("t-co2").textContent = has(r?.co2_ppm) ? Math.round(r.co2_ppm) : "--";
-
+// A room's latest reading drawn like a small e-paper screen. A device without a CO2 sensor leaves that part out.
+function screenHtml(room, withName) {
+  const r = room.latest;
+  const stale = !r || Date.now() - new Date(r.ts) > OFFLINE_AFTER_MS;
+  const withCo2 = !r || measures(room, "co2_ppm");
+  const temp = has(r?.temp_c) ? Number(r.temp_c).toFixed(1) + "°C" : "--";
+  const hum = has(r?.humidity) ? Math.round(r.humidity) + "%" : "--";
+  const humWord = has(r?.humidity) ? METRICS.humidity.rate(r.humidity)[1] : "--";
+  const co2 = has(r?.co2_ppm) ? Math.round(r.co2_ppm) : "--";
   const level = has(r?.co2_ppm) ? METRICS.co2_ppm.rate(r.co2_ppm)[0] : null;
-  const air = $("t-air");
-  air.textContent = level === "poor" ? "Open window" : level ? "Air " + level : "Air --";
-  air.classList.toggle("poor", level === "poor");
-
-  $("t-offline").toggleAttribute("hidden", !stale);
-  $("t-batt").toggleAttribute("hidden", !r?.charging && !has(r?.battery_pct));
-  $("t-bolt").toggleAttribute("hidden", !r?.charging);
-  $("t-fill").setAttribute("width", r?.charging || !has(r?.battery_pct) ? 0 : 19 * r.battery_pct / 100);
-  $("screen").setAttribute("aria-label", `Latest reading: ${$("t-temp").textContent}, humidity ${$("t-hum").textContent}` + (withCo2 ? `, CO2 ${$("t-co2").textContent}, ${air.textContent}` : ""));
+  const air = level === "poor" ? "Open window" : level ? "Air " + level : "Air --";
+  const battery = r?.charging || has(r?.battery_pct);
+  const label = `${room.name}: ${temp}, humidity ${hum}` + (withCo2 ? `, CO2 ${co2}, ${air}` : "") + (stale ? ", offline" : "");
+  return `<div class="screen" role="img" aria-label="${esc(label)}">
+    <div class="screen-top">
+      ${withName ? `<span>${esc(room.name)}</span>` : ""}
+      <svg width="20" height="16" viewBox="0 0 24 19" fill="none" stroke="#16140f" stroke-width="2.5" aria-hidden="true">
+        <path d="M2 7 A14 14 0 0 1 22 7"/><path d="M6.5 11.5 A8 8 0 0 1 17.5 11.5"/><rect x="10.5" y="15" width="3" height="3" fill="#16140f" stroke="none"/>
+        ${stale ? `<path d="M2 18 L22 1" stroke="#e6e5dc" stroke-width="5"/><path d="M2 18 L22 1"/>` : ""}
+      </svg>
+      ${battery ? `<svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="#16140f" stroke-width="2" aria-hidden="true">
+        <rect x="1" y="1" width="23" height="12"/><rect x="25" y="4" width="3" height="6" fill="#16140f" stroke="none"/>
+        ${r.charging ? `<path d="M15 2 L9 8 H13 L11 12 L17 6 H13 Z" fill="#16140f" stroke="none"/>`
+                     : `<rect x="3" y="3" width="${(19 * r.battery_pct / 100).toFixed(1)}" height="8" fill="#16140f" stroke="none"/>`}
+      </svg>` : ""}
+    </div>
+    <div class="screen-temp">${temp}</div>
+    <div class="screen-row${withCo2 ? "" : " single"}">
+      <div><span>${humWord}</span><b>${hum}</b></div>
+      ${withCo2 ? `<div><span>CO2</span><b>${co2}</b></div>` : ""}
+    </div>
+    ${withCo2 ? `<div class="screen-air${level === "poor" ? " poor" : ""}">${air}</div>` : ""}
+  </div>`;
 }
 
 function initControls() {
@@ -536,7 +561,7 @@ function initControls() {
     document.querySelectorAll(".ranges button").forEach((b) => b.classList.toggle("on", b === btn));
     refresh();
   }));
-  $("plot").addEventListener("click", (e) => {
+  $("plots").addEventListener("click", (e) => {
     const bar = e.target.closest(".bar");
     if (!bar) return;
     state.picked = Number(bar.dataset.i);
@@ -546,13 +571,13 @@ function initControls() {
 }
 
 // One slot per bucket of the range, oldest first; hours with no data stay as empty slots
-function chartSlots() {
+function chartSlots(rows) {
   const r = RANGES[state.range];
   const now = Date.now();
   const first = BUCKET_ORIGIN + Math.floor((now - r.ms - BUCKET_ORIGIN) / r.bucketMs) * r.bucketMs;
   const count = Math.floor((now - first) / r.bucketMs) + 1;
   const slots = Array.from({ length: count }, (_, i) => ({ t: first + i * r.bucketMs, v: null }));
-  for (const row of state.rows) {
+  for (const row of rows) {
     const i = Math.floor((new Date(row.ts).getTime() - first) / r.bucketMs);
     if (slots[i]) slots[i].v = row[state.metric];
   }
@@ -570,45 +595,45 @@ function renderChart() {
   $("chart-title").textContent = m.label;
   $("x-start").textContent = r.start;
   $("x-mid").textContent = r.mid;
-
-  const slots = chartSlots();
-  const known = slots.filter((s) => has(s.v));
-  const lo = Math.min(m.lo, ...known.map((s) => s.v));
-  const hi = Math.max(m.hi, ...known.map((s) => s.v));
-  const label = (v) => Number(v).toFixed(0) + m.unit;
-  $("y-hi").textContent = label(hi);
-  $("y-mid").textContent = label((hi + lo) / 2);
-  $("y-lo").textContent = label(lo);
-
-  if (state.picked === null || !has(slots[state.picked]?.v)) {
-    state.picked = known.length ? slots.lastIndexOf(known[known.length - 1]) : null;
-  }
-
-  const height = (v) => Math.max(1, (v - lo) / (hi - lo) * 100);
-  const bars = slots.map((s, i) => {
-    if (!has(s.v)) return `<div class="bar" aria-hidden="true"></div>`;
-    const [level, word] = m.rate(s.v);
-    const text = `${whenLabel(s.t)}: ${fmt(s.v, state.metric)}, ${word}`;
-    return `<button class="bar${i === state.picked ? " picked" : ""}" data-i="${i}" aria-label="${text}"><span class="${level}" style="height:${height(s.v).toFixed(1)}%"></span></button>`;
-  }).join("");
-  const limits = m.limits.map(([v, text]) =>
-    `<div class="limit" style="top:${(100 - (v - lo) / (hi - lo) * 100).toFixed(1)}%"><span>${text}</span></div>`).join("");
-  $("plot").innerHTML = bars + limits;
-
   $("legend").innerHTML = m.legend.map(([level, text]) => `<span><i class="${level}"></i>${text}</span>`).join("");
 
-  if (!known.length) {
-    $("readout-time").textContent = "No data for this range yet";
-    $("readout-value").textContent = "";
-    $("stats").textContent = "";
-    return;
+  // One plot per room that measures this reading, all on the same scale so they can be compared
+  const measuring = state.data.filter((room) => measures(room, state.metric));
+  const series = (measuring.length ? measuring : state.data).map((room) => ({ room, slots: chartSlots(room.rows) }));
+  const all = series.flatMap((one) => one.slots).filter((slot) => has(slot.v)).map((slot) => slot.v);
+  const lo = Math.min(m.lo, ...all);
+  const hi = Math.max(m.hi, ...all);
+  const label = (v) => Number(v).toFixed(0) + m.unit;
+
+  // The picked bar is the same moment in every plot
+  const hasAt = (i) => series.some((one) => has(one.slots[i]?.v));
+  if (state.picked === null || !hasAt(state.picked)) {
+    state.picked = null;
+    for (let i = series[0].slots.length - 1; i >= 0 && state.picked === null; i--) if (hasAt(i)) state.picked = i;
   }
-  const picked = slots[state.picked];
-  $("readout-time").textContent = whenLabel(picked.t);
-  $("readout-value").textContent = `${fmt(picked.v, state.metric)} · ${m.rate(picked.v)[1]}`;
-  const v = known.map((s) => s.v);
-  const avg = v.reduce((a, b) => a + b, 0) / v.length;
-  $("stats").textContent = `MIN ${fmt(Math.min(...v), state.metric)} · AVG ${fmt(avg, state.metric)} · MAX ${fmt(Math.max(...v), state.metric)}`;
+  $("readout-time").textContent = state.picked === null ? "No data for this range yet" : whenLabel(series[0].slots[state.picked].t);
+
+  const height = (v) => Math.max(1, (v - lo) / (hi - lo) * 100);
+  const limits = m.limits.map(([v, text]) =>
+    `<div class="limit" style="top:${(100 - (v - lo) / (hi - lo) * 100).toFixed(1)}%"><span>${text}</span></div>`).join("");
+  $("plots").classList.toggle("multi", series.length > 1);
+  $("plots").innerHTML = series.map(({ room, slots }) => {
+    const bars = slots.map((slot, i) => {
+      if (!has(slot.v)) return `<div class="bar" aria-hidden="true"></div>`;
+      const [level, word] = m.rate(slot.v);
+      const text = `${esc(room.name)}, ${whenLabel(slot.t)}: ${fmt(slot.v, state.metric)}, ${word}`;
+      return `<button class="bar${i === state.picked ? " picked" : ""}" data-i="${i}" aria-label="${text}"><span class="${level}" style="height:${height(slot.v).toFixed(1)}%"></span></button>`;
+    }).join("");
+    const v = slots.filter((slot) => has(slot.v)).map((slot) => slot.v);
+    const picked = state.picked === null ? null : slots[state.picked].v;
+    const now = has(picked) ? `${fmt(picked, state.metric)} · ${m.rate(picked)[1]}` : "--";
+    const stats = v.length ? `MIN ${fmt(Math.min(...v), state.metric)} · AVG ${fmt(v.reduce((a, b) => a + b, 0) / v.length, state.metric)} · MAX ${fmt(Math.max(...v), state.metric)}` : "";
+    return `<div class="plot-head"><span>${series.length > 1 ? `<b>${esc(room.name)}</b> ` : ""}<b>${now}</b></span><span>${stats}</span></div>
+      <div class="plot-wrap">
+        <div class="y-axis"><span>${label(hi)}</span><span>${label((hi + lo) / 2)}</span><span>${label(lo)}</span></div>
+        <div class="plot">${bars}${limits}</div>
+      </div>`;
+  }).join("");
 }
 
 // ---------- Devices ----------
