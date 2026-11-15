@@ -5,7 +5,7 @@
 // Board settings: XIAO_ESP32S3, USB CDC On Boot = Enabled, PSRAM = OPI.
 // Library: Seeed_GFX2 (from GitHub, not the Library Manager).
 //
-// Wiring: SHT41 VIN -> 3V3, GND -> GND, SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
+// Wiring: SHT41 VIN -> 3V3 header hole (switched by GPIO43), GND -> GND, SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
 
 #include <Wire.h>
 #include <Seeed_GFX.h>
@@ -17,6 +17,7 @@
 const int PIN_SDA = 5;
 const int PIN_SCL = 6;
 const int PIN_KEYS[3] = {2, 3, 8};         // Key1, Key2, Key3: active low, 10k pull-ups on the board
+const int PIN_PANEL_POWER = 43;            // PWR_EN: switches VCC_3V3, which feeds the display and the 3V3 header hole
 const int PIN_BATTERY = 1;                 // BAT_ADC: VBAT through a 10k/10k divider
 const int PIN_BATTERY_ENABLE_A = 39;       // ADC_EN per the EE05 schematic's pin naming
 const int PIN_BATTERY_ENABLE_B = 41;       // ADC_EN if the other XIAO pin naming applies
@@ -27,6 +28,13 @@ Seeed_GFX display;
 bool displayOk = false;
 bool keyDown[3] = {false, false, false};
 uint32_t lastReportMs = 0;
+
+// The display library may switch the rail off after an update; the SHT41 on the header needs it on
+void powerRailOn() {
+  pinMode(PIN_PANEL_POWER, OUTPUT);
+  digitalWrite(PIN_PANEL_POWER, HIGH);
+  delay(5);  // SHT41 power-up time is 1 ms
+}
 
 // High-precision measurement; false if the sensor doesn't answer or a checksum is wrong
 bool readSht41(float& tempC, float& humidity) {
@@ -90,9 +98,12 @@ void drawScreen(const char* line, float tempC, float humidity, bool shtOk) {
   snprintf(buf, sizeof(buf), "%d x %d", display.width(), display.height());
   display.drawString(buf, 10, 104);
   display.update();
+  powerRailOn();
 }
 
 void report() {
+  Serial.printf("3V3 rail enable (GPIO%d) reads %d before forcing it on\n", PIN_PANEL_POWER, digitalRead(PIN_PANEL_POWER));
+  powerRailOn();
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   scanI2c();
@@ -122,6 +133,7 @@ void setup() {
   if (displayOk) display.setRotation(3);  // 250x122, long edge horizontal
   else Serial.println(display.lastResult().message);
 
+  powerRailOn();
   float t = NAN, h = NAN;
   bool shtOk = readSht41(t, h);
   uint32_t startedMs = millis();
